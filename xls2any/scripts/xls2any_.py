@@ -18,6 +18,13 @@ from .. import x2pyxl
 Ctx = utils.Ctx
 
 
+def get_pyexc_msg():
+    exc_type, exc_value, exc_tb = sys.exc_info()
+    del exc_tb
+    exc_msg = traceback.format_exception_only(exc_type, exc_value)[0]
+    return exc_msg.strip()
+
+
 def ignore_return(func):
     @functools.wraps(func)
     def wrap(*args, **kwds):
@@ -39,6 +46,21 @@ def do_json(value, indent=None):
 
 def do_lua(value, indent=None):
     return x2pylua.dumps(value, indent=indent)
+
+
+def do_check(value, expr, msg=None):
+    try:
+        bval = eval(expr, {}, {'x': value})
+    except Exception:
+        msg1 = '校验表达式异常 {0} -- ' + get_pyexc_msg()
+    else:
+        if not bval:
+            msg1 = msg or '数值校验不通过 {0}'
+        else:
+            msg1 = None
+    if msg1:
+        Ctx.error(msg1, repr(expr))
+    return value
 
 
 FILTERS = {
@@ -71,6 +93,7 @@ FILTERS = {
     'trim':         defaults.DEFAULT_FILTERS['trim'],
     'unique':       defaults.DEFAULT_FILTERS['unique'],
     'upper':        defaults.DEFAULT_FILTERS['upper'],
+    'check':        do_check,
 }
 GLOBALS = {
     'range':        defaults.DEFAULT_NAMESPACE['range'],
@@ -125,8 +148,8 @@ def main(template, verbose):
     j2env.globals.update(GLOBALS)
     try:
         j2res = j2env.from_string(j2txt).render()
-    except Exception as exc:
+    except Exception:
         Ctx.set_ctx(template.name, get_j2exc_lineno())
-        Ctx.abort('处理模板文件时发生错误：{0}', str(exc))
+        Ctx.abort('处理模板文件时发生错误：{0}', get_pyexc_msg())
     else:
         print(j2res, file=sys.stdout, flush=True)
