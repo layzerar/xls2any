@@ -4,14 +4,16 @@
 {% do output('datasource1.lua') -%} -- 将模板生成的结果保存到datasource1.lua文件
 Test =
 {
-    {%- for row in ws1['3:'] %} -- 从第3行开始读到结束
+    -- 从第3行开始读到结束
+    {%- for row in ws1['3:'] %}
     {
         mon_id = {{ row.val(1) | lua }},    -- 获取当前行第1列的值
         mon_name = {{ row.val('B') | lua }}, -- 获取当前行B列的值
         mon_pos = {{ row.cut('@mon_pos_x', 3).asdict('pos_x', 'pos_y', 'pos_z') | lua }}, -- 获取当前行第@mon_pos_x列开始切分三列作为Lua表
         drop_prob = {{ (row.val('@mon_drop_prob') / 100) | lua }},
         mon_drops = {
-            {%- for grp in row.slc('@drop1_item', 2, 3) %}  -- 获取当前行第@drop1_item列开始以2列为一组切成3组
+            -- 获取当前行第@drop1_item列开始以2列为一组切成3组
+            {%- for grp in row.slc('@drop1_item', 2, 3) %}
             {{ grp.asdict('id', 'weight') | lua }},  -- 把当前组按提供的字段名生成Lua表
             {%- endfor %}
         },
