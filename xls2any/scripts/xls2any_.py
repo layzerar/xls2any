@@ -55,7 +55,7 @@ def do_check(ctx, value, expr, msg=None):
     global_['__builtins__'] = dict(
         abs=abs, all=all, any=any, bin=bin, bool=bool, chr=chr,
         divmod=divmod, float=float, hex=hex, int=int, len=len, max=max,
-        min=min, next=next, oct=oct, ord=ord, round=round, str=str, sum=sum,
+        min=min, oct=oct, ord=ord, round=round, str=str, sum=sum,
     )
     try:
         rval = eval(expr, global_, {'x': value})
@@ -71,8 +71,21 @@ def do_check(ctx, value, expr, msg=None):
     return value
 
 
+@filters.environmentfilter
+def do_next(env, value, num=1):
+    cur = None
+    itr = iter(value)
+    for _ in range(num):
+        try:
+            cur = next(itr)
+        except StopIteration:
+            return env.undefined('不能获取第{0}个元素'.format(num))
+    return cur
+
+
 FILTERS = {
     'abs':          defaults.DEFAULT_FILTERS['abs'],
+    'check':        do_check,
     'choice':       defaults.DEFAULT_FILTERS['random'],
     'd':            defaults.DEFAULT_FILTERS['default'],
     'default':      defaults.DEFAULT_FILTERS['default'],
@@ -92,6 +105,7 @@ FILTERS = {
     'lua':          do_lua,
     'max':          defaults.DEFAULT_FILTERS['max'],
     'min':          defaults.DEFAULT_FILTERS['min'],
+    'next':         do_next,
     'reverse':      defaults.DEFAULT_FILTERS['reverse'],
     'round':        defaults.DEFAULT_FILTERS['round'],
     's':            defaults.DEFAULT_FILTERS['string'],
@@ -101,7 +115,6 @@ FILTERS = {
     'trim':         defaults.DEFAULT_FILTERS['trim'],
     'unique':       defaults.DEFAULT_FILTERS['unique'],
     'upper':        defaults.DEFAULT_FILTERS['upper'],
-    'check':        do_check,
 }
 GLOBALS = {
     'range':        defaults.DEFAULT_NAMESPACE['range'],
