@@ -183,7 +183,7 @@ class SheetView(object):
         self._headers = headers or {}
 
     def __str__(self):
-        return '{0}:{1}'.format(self._filename, self._sheetname)
+        return '{0}#{1}'.format(self._filename, self._sheetname)
 
     def __iter__(self):
         return self[RANGE_SEP]
@@ -197,7 +197,7 @@ class SheetView(object):
             return
         slc, off_col, off_row = parse_ranges(expr, max_col, max_row)
         for idx, row in enumerate(self._worksheet[slc], 1):
-            Ctx.set_ctx(self._filename, off_row + idx)
+            Ctx.set_ctx(str(self), off_row + idx)
             yield ArrayView(self, row, off_col)
 
     def column(self, key):
@@ -232,6 +232,7 @@ class SheetView(object):
             if row.val(1) is not None \
                     and str(row.val(1)).strip() == val:
                 return row.val(idx)
+        Ctx.error('无法在指定区域{0!r}找到对应值{1!r}', tab, val)
         return None
 
 
