@@ -117,6 +117,19 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
     raise ValueError('错误的区域格式：{0!r}'.format(expr))
 
 
+def xleq(val1, val2):
+    if val1 is val2:
+        return True
+    elif type(val1) is type(val2):
+        return val1 == val2
+    elif type(val1) is str:
+        return val1.strip() == str(val2).strip()
+    elif type(val2) is str:
+        return str(val1).strip() == val2.strip()
+    else:
+        return str(val1).strip() == str(val2).strip()
+
+
 class ArrayView(object):
 
     def __init__(self, sheet, array, offset):
@@ -227,10 +240,9 @@ class SheetView(object):
         return tuple()
 
     def vlookup(self, val, tab, idx):
-        val = str(val).strip()
         for row in self.select(tab):
             if row.val(1) is not None \
-                    and str(row.val(1)).strip() == val:
+                    and xleq(val, row.val(1)):
                 return row.val(idx)
         Ctx.error('指定区域{0}${1}找不到对应值{2!r}', str(self), tab, val)
         return None

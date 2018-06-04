@@ -48,13 +48,21 @@ def do_lua(value, indent=None):
     return x2pylua.dumps(value, indent=indent)
 
 
-def do_check(value, expr, msg=None):
+@filters.contextfilter
+def do_check(ctx, value, expr, msg=None):
+    global_ = ctx.get_exported()
+    global_['_eq'] = x2pyxl.xleq
+    global_['__builtins__'] = dict(
+        abs=abs, all=all, any=any, bin=bin, bool=bool, chr=chr,
+        divmod=divmod, float=float, hex=hex, int=int, len=len, max=max,
+        min=min, next=next, oct=oct, ord=ord, round=round, str=str, sum=sum,
+    )
     try:
-        bval = eval(expr, {}, {'x': value})
+        rval = eval(expr, global_, {'x': value})
     except Exception:
         msg1 = '校验表达式异常 {0} -- ' + get_pyexc_msg()
     else:
-        if not bval:
+        if not rval:
             msg1 = msg or '数值校验不通过 {0}'
         else:
             msg1 = None
@@ -138,7 +146,7 @@ def main(template, verbose):
 
     j2env = jinja2.Environment(
         extensions=[
-            'jinja2.ext.do', 
+            'jinja2.ext.do',
             'jinja2.ext.loopcontrols',
         ],
     )
