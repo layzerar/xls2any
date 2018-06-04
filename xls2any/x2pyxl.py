@@ -194,6 +194,7 @@ class SheetView(object):
         self._sheetname = sheetname
         self._worksheet = worksheet
         self._headers = headers or {}
+        self._active = None
 
     def __str__(self):
         return '{0}#{1}'.format(self._filename, self._sheetname)
@@ -211,7 +212,12 @@ class SheetView(object):
         slc, off_col, off_row = parse_ranges(expr, max_col, max_row)
         for idx, row in enumerate(self._worksheet[slc], 1):
             Ctx.set_ctx(str(self), off_row + idx)
-            yield ArrayView(self, row, off_col)
+            self._active = ArrayView(self, row, off_col)
+            yield self._active
+
+    @property
+    def active(self):
+        return self._active
 
     def column(self, key):
         if isinstance(key, str):
@@ -233,11 +239,8 @@ class SheetView(object):
         if max_row > 0 and max_col > 0:
             slc, off_col, _ = parse_ranges(expr, max_col, max_row)
             if slc is not None:
-                return tuple(
-                    ArrayView(self, row, off_col)
-                    for row in self._worksheet[slc]
-                )
-        return tuple()
+                for row in self._worksheet[slc]:
+                    yield ArrayView(self, row, off_col)
 
     def vlookup(self, val, tab, idx):
         for row in self.select(tab):
