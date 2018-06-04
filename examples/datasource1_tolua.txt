@@ -14,7 +14,7 @@ Test =
             {%- for grp in row.slc('@drop1_item', 2, 3) %}  -- 获取当前行第@drop1_item列开始以2列为一组切成3组
             {{ grp.asdict('id', 'weight') | lua }},  -- 把当前组按提供的字段名生成Lua表
             {%- endfor %}
-        }
+        },
         model_id = {{ ws2.vlookup(row.val('@mon_model'), 'B4:C13', 2) | lua }}, -- 根据当前行第@mon_model列的去查找(vlookup方式)ws2中'B4:C13'的值
     },
     {%- endfor %}
