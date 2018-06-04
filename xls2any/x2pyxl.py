@@ -232,7 +232,7 @@ class SheetView(object):
             if row.val(1) is not None \
                     and str(row.val(1)).strip() == val:
                 return row.val(idx)
-        Ctx.error('无法在指定区域{0!r}找到对应值{1!r}', tab, val)
+        Ctx.error('指定区域{0}${1}找不到对应值{2!r}', str(self), tab, val)
         return None
 
 
