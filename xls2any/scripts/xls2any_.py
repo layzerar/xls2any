@@ -1,0 +1,132 @@
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+import json
+import functools
+import traceback
+
+import click
+import jinja2
+from jinja2 import filters
+from jinja2 import defaults
+
+from .. import utils
+from .. import x2pylua
+from .. import x2pyxl
+
+Ctx = utils.Ctx
+
+
+def ignore_return(func):
+    @functools.wraps(func)
+    def wrap(*args, **kwds):
+        func(*args, **kwds)
+        return ''
+    return wrap
+
+
+def do_json(value, indent=None):
+    options = {}
+    options['sort_keys'] = True
+    options['ensure_ascii'] = False
+    if indent is not None:
+        options['indent'] = indent
+    else:
+        options['separators'] = (',', ':')
+    return json.dumps(value, **options)
+
+
+def do_lua(value, indent=None):
+    return x2pylua.dumps(value, indent=indent)
+
+
+FILTERS = {
+    'abs':          defaults.DEFAULT_FILTERS['abs'],
+    'choice':       defaults.DEFAULT_FILTERS['random'],
+    'd':            defaults.DEFAULT_FILTERS['default'],
+    'default':      defaults.DEFAULT_FILTERS['default'],
+    'e':            defaults.DEFAULT_FILTERS['escape'],
+    'escape':       defaults.DEFAULT_FILTERS['escape'],
+    'f':            defaults.DEFAULT_FILTERS['float'],
+    'float':        defaults.DEFAULT_FILTERS['float'],
+    'format':       defaults.DEFAULT_FILTERS['format'],
+    'i':            defaults.DEFAULT_FILTERS['int'],
+    'indent':       defaults.DEFAULT_FILTERS['indent'],
+    'int':          defaults.DEFAULT_FILTERS['int'],
+    'join':         defaults.DEFAULT_FILTERS['join'],
+    'json':         do_json,
+    'len':          defaults.DEFAULT_FILTERS['length'],
+    'list':         defaults.DEFAULT_FILTERS['list'],
+    'lower':        defaults.DEFAULT_FILTERS['lower'],
+    'lua':          do_lua,
+    'max':          defaults.DEFAULT_FILTERS['max'],
+    'min':          defaults.DEFAULT_FILTERS['min'],
+    'reverse':      defaults.DEFAULT_FILTERS['reverse'],
+    'round':        defaults.DEFAULT_FILTERS['round'],
+    's':            defaults.DEFAULT_FILTERS['string'],
+    'sort':         defaults.DEFAULT_FILTERS['sort'],
+    'str':          defaults.DEFAULT_FILTERS['string'],
+    'sum':          defaults.DEFAULT_FILTERS['sum'],
+    'trim':         defaults.DEFAULT_FILTERS['trim'],
+    'unique':       defaults.DEFAULT_FILTERS['unique'],
+    'upper':        defaults.DEFAULT_FILTERS['upper'],
+}
+GLOBALS = {
+    'range':        defaults.DEFAULT_NAMESPACE['range'],
+    'dict':         defaults.DEFAULT_NAMESPACE['dict'],
+    'cycler':       defaults.DEFAULT_NAMESPACE['cycler'],
+    'joiner':       defaults.DEFAULT_NAMESPACE['joiner'],
+    'namespace':    defaults.DEFAULT_NAMESPACE['namespace'],
+    'loadws':       x2pyxl.load_worksheet,
+    'output':       ignore_return(utils.open_as_stdout),
+}
+
+
+def get_j2exc_lineno():
+    exc_tb = sys.exc_info()[2]
+    stacks = traceback.extract_tb(exc_tb)
+    exc_tb = None
+    for frame in reversed(stacks):
+        if frame[0] == '<template>':
+            return frame[1]
+    return 1
+
+
+@click.command()
+@click.argument('template', type=click.File('rb'))
+@click.option('--verbose', is_flag=True)
+def main(template, verbose):
+    if verbose:
+        @Ctx.set_abort_handler
+        def _at_abort():
+            Ctx.error(traceback.format_exc())
+            sys.exit(1)
+
+    os.chdir(os.path.dirname(os.path.abspath(template.name)))
+
+    j2data = template.read()
+    encoding = utils.detect_encoding(j2data)
+    try:
+        j2txt = j2data.decode(encoding, errors="ignore")
+    except (LookupError, TypeError):
+        Ctx.set_ctx(template.name, 1)
+        Ctx.abort('无法识别模板文件的文件编码')
+
+    j2env = jinja2.Environment(
+        extensions=[
+            'jinja2.ext.do', 
+            'jinja2.ext.loopcontrols',
+        ],
+    )
+    j2env.filters.clear()
+    j2env.filters.update(FILTERS)
+    j2env.globals.clear()
+    j2env.globals.update(GLOBALS)
+    try:
+        j2res = j2env.from_string(j2txt).render()
+    except Exception as exc:
+        Ctx.set_ctx(template.name, get_j2exc_lineno())
+        Ctx.abort('处理模板文件时发生错误：{0}', str(exc))
+    else:
+        print(j2res, file=sys.stdout, flush=True)
