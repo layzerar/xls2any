@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
+import io
 import os
+import re
 import sys
 import json
 import functools
@@ -18,11 +20,25 @@ from .. import x2pyxl
 Ctx = utils.Ctx
 
 
+VARX_REGEX = re.compile(r'\bx\b')
+
+
 def get_pyexc_msg():
     exc_type, exc_value, exc_tb = sys.exc_info()
     del exc_tb
     exc_msg = traceback.format_exception_only(exc_type, exc_value)[0]
     return exc_msg.strip()
+
+
+def expand_check_expr(expr, value):
+    cur = 0
+    buf = io.StringIO()
+    for match in VARX_REGEX.finditer(expr):
+        buf.write(expr[cur:match.start()])
+        buf.write(str(value))
+        cur = match.end()
+    buf.write(expr[cur:])
+    return buf.getvalue()
 
 
 def ignore_return(func):
@@ -67,7 +83,7 @@ def do_check(ctx, value, expr, msg=None):
         else:
             msg1 = None
     if msg1:
-        Ctx.error(msg1, repr(expr))
+        Ctx.error(msg1, repr(expand_check_expr(expr, value)))
     return value
 
 
