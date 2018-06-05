@@ -12,6 +12,7 @@ pyinstaller ^
     --exclude-module=win32com ^
     --exclude-module=win32ui ^
     --exclude-module=win32wnet ^
+    --name=xls2any ^
     main_.py
 
 PAUSE
