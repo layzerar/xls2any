@@ -138,13 +138,15 @@ TESTS.update({
     'xeq':          x2pyxl.xeq_,
 })
 GLOBALS = {
-    'range':        defaults.DEFAULT_NAMESPACE['range'],
-    'dict':         defaults.DEFAULT_NAMESPACE['dict'],
+    'abort':        Ctx.abort,
     'cycler':       defaults.DEFAULT_NAMESPACE['cycler'],
+    'dict':         defaults.DEFAULT_NAMESPACE['dict'],
+    'error':        Ctx.error,
     'joiner':       defaults.DEFAULT_NAMESPACE['joiner'],
-    'namespace':    defaults.DEFAULT_NAMESPACE['namespace'],
     'loadws':       x2pyxl.load_worksheet,
+    'namespace':    defaults.DEFAULT_NAMESPACE['namespace'],
     'output':       ignore_return(utils.open_as_stdout),
+    'range':        defaults.DEFAULT_NAMESPACE['range'],
 }
 
 
