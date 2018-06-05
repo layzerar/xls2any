@@ -325,7 +325,7 @@ def get_worksheet_headers(ws, head):
 
 def load_worksheet(filepath, sheetname, head=1):
     try:
-        wb = openpyxl.load_workbook(filepath)
+        wb = openpyxl.load_workbook(filepath, data_only=True)
         ws = wb[sheetname]
     except IOError:
         Ctx.abort('无法打开目标工作簿：{0}', filepath)
