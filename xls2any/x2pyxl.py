@@ -22,7 +22,7 @@ RANGE1_REGEX = \
 RANGE2_REGEX = \
     re.compile(r'^([1-9][0-9]*)?:([1-9][0-9]*)?$')
 RANGE3_REGEX = \
-    re.compile(r'^(([A-Z]+)([1-9][0-9]*))?:(([A-Z]+)([1-9][0-9]*))?$')
+    re.compile(r'^([A-Z]+)?([1-9][0-9]*)?:([A-Z]+)?([1-9][0-9]*)?$')
 RANGE4_REGEX = COLUMN_REGEX
 RANGE5_REGEX = \
     re.compile(r'^([1-9][0-9]*)$')
@@ -67,18 +67,10 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
         ]), min_col - 1, lrow - 1
 
     def make_range3(matches):
-        if matches.group(1):
-            lcol = parse_column(matches.group(2))
-            lrow = int(matches.group(3))
-        else:
-            lcol = min_col
-            lrow = min_row
-        if matches.group(4):
-            hcol = parse_column(matches.group(5))
-            hrow = int(matches.group(6))
-        else:
-            hcol = max_col
-            hrow = max_row
+        lcol = parse_column(matches.group(1)) if matches.group(1) else min_col
+        lrow = int(matches.group(2)) if matches.group(2) else min_row
+        hcol = parse_column(matches.group(3)) if matches.group(3) else max_col
+        hrow = int(matches.group(4)) if matches.group(4) else max_row
         if lcol > hcol:
             lcol, hcol = hcol, lcol
         if lrow > hrow:
@@ -185,10 +177,11 @@ def xcmp_(val1, val2):
 
 class ArrayView(object):
 
-    def __init__(self, sheet, array, offset):
+    def __init__(self, sheet, array, offset, vindex):
         self._sheet = sheet
         self._array = array
         self._offset = offset
+        self._vindex = vindex
 
     def __len__(self):
         return len(self._array)
@@ -196,6 +189,10 @@ class ArrayView(object):
     def __iter__(self):
         for elm in self._array:
             yield elm.value
+
+    @property
+    def idx(self):
+        return self._vindex
 
     def val(self, key):
         if not isinstance(key, int):
@@ -227,6 +224,7 @@ class ArrayView(object):
                     self._sheet,
                     self._array[offset:offset+size],
                     self._offset + offset,
+                    self._vindex,
                 )
         else:
             raise ValueError('分组超出区域范围：{0!r},{1},{2}'.format(
@@ -265,7 +263,7 @@ class SheetView(object):
         slc, off_col, off_row = parse_ranges(expr, max_col, max_row)
         for idx, row in enumerate(self._worksheet[slc], 1):
             Ctx.set_ctx(str(self), off_row + idx)
-            self._active = ArrayView(self, row, off_col)
+            self._active = ArrayView(self, row, off_col, off_row + idx)
             yield self._active
 
     @property
@@ -290,10 +288,10 @@ class SheetView(object):
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
         if max_row > 0 and max_col > 0:
-            slc, off_col, _ = parse_ranges(expr, max_col, max_row)
+            slc, off_col, off_row = parse_ranges(expr, max_col, max_row)
             if slc is not None:
-                for row in self._worksheet[slc]:
-                    yield ArrayView(self, row, off_col)
+                for idx, row in enumerate(self._worksheet[slc], 1):
+                    yield ArrayView(self, row, off_col, off_row + idx)
 
     def vlookup(self, val, tab, idx):
         for row in self.select(tab):
