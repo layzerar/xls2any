@@ -131,7 +131,12 @@ FILTERS = {
     'unique':       defaults.DEFAULT_FILTERS['unique'],
     'upper':        defaults.DEFAULT_FILTERS['upper'],
     'xgroupby':     x2pyxl.xgroupby,
+    'xrequire':     x2pyxl.xrequire,
 }
+TESTS = dict(defaults.DEFAULT_TESTS)
+TESTS.update({
+    'xeq':          x2pyxl.xeq_,
+})
 GLOBALS = {
     'range':        defaults.DEFAULT_NAMESPACE['range'],
     'dict':         defaults.DEFAULT_NAMESPACE['dict'],
@@ -193,6 +198,8 @@ def main(template, verbose):
     )
     j2env.filters.clear()
     j2env.filters.update(FILTERS)
+    j2env.tests.clear()
+    j2env.tests.update(TESTS)
     j2env.globals.clear()
     j2env.globals.update(GLOBALS)
     try:

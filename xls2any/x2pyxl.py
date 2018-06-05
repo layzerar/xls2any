@@ -2,6 +2,7 @@
 
 import re
 import os
+import datetime
 import functools
 import itertools
 
@@ -120,43 +121,52 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
     raise ValueError('错误的区域格式：{0!r}'.format(expr))
 
 
+XEQ_NUM_TYPES = frozenset([
+    int, float, bool, complex,
+])
+XEQ_ALL_TYPES = frozenset([
+    str, int, float, type(None), bool, complex,
+    datetime.datetime,
+    datetime.date,
+    tuple,
+])
+
+
 def xeq_(val1, val2):
     tp_val1 = type(val1)
     tp_val2 = type(val2)
-    try:
-        if val1 is val2:
-            return True
-        elif tp_val1 is tp_val2:
-            if tp_val1 is tuple:
-                if len(val1) == len(val2):
-                    return all(itertools.starmap(xeq_, zip(val1, val2)))
-                else:
-                    return False
-            else:
-                return val1 == val2
-        elif tp_val1 is tuple or tp_val2 is tuple:
-            return False
-        elif tp_val1 is float:
-            if tp_val2 is int:
-                return val1 == val2
-            elif tp_val2 is str:
+    if tp_val1 not in XEQ_ALL_TYPES \
+            or tp_val2 not in XEQ_ALL_TYPES:
+        return False
+    elif val1 is val2:
+        return True
+    elif tp_val1 is tuple \
+            or tp_val2 is tuple:
+        if tp_val1 is tp_val2 \
+                and len(val1) == len(val2):
+            return all(itertools.starmap(xeq_, zip(val1, val2)))
+        return False
+    elif tp_val1 is tp_val2:
+        return val1 == val2
+    elif tp_val1 in XEQ_NUM_TYPES \
+            and tp_val2 in XEQ_NUM_TYPES:
+        return val1 == val2
+    elif tp_val1 is float \
+            or tp_val2 is float:
+        try:
+            if tp_val1 is str:
                 return val1 == float(val2.strip())
-            else:
-                return False
-        elif tp_val2 is float:
-            if tp_val1 is int:
-                return val2 == val1
-            elif tp_val1 is str:
+            elif tp_val2 is str:
                 return val2 == float(val1.strip())
             else:
                 return False
-        elif tp_val1 is str:
-            return val1.strip() == ('' if val2 is None else str(val2))
-        elif tp_val2 is str:
-            return val2.strip() == ('' if val1 is None else str(val1))
-        else:
-            return str(val1) == str(val2)
-    except ValueError:
+        except ValueError:
+            return False
+    elif tp_val1 is str:
+        return val1.strip() == ('' if val2 is None else str(val2))
+    elif tp_val2 is str:
+        return val2.strip() == ('' if val1 is None else str(val1))
+    else:
         return False
 
 
@@ -294,6 +304,12 @@ class SheetView(object):
         return None
 
 
+def xrequire(rows, *keys):
+    for row in rows:
+        if all(not xeq_(row.val(key), '') for key in keys):
+            yield row
+
+
 def xgroupby(rows, *keys):
     def getkey(row):
         return tuple(row.val(key) for key in keys)
@@ -309,7 +325,7 @@ def xgroupby(rows, *keys):
     origin_rows = list(rows)
     sorted_rows = sorted(origin_rows, key=functools.cmp_to_key(rowcmp))
     for key, group in itertools.groupby(sorted_rows, key=functools.cmp_to_key(rowcmp)):
-        yield key.obj, group
+        yield getkey(key.obj), group
 
 
 def get_worksheet_headers(ws, head):
