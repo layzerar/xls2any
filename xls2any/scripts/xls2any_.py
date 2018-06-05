@@ -67,7 +67,6 @@ def do_lua(value, indent=None):
 @filters.contextfilter
 def do_check(ctx, value, expr, msg=None):
     global_ = ctx.get_exported()
-    global_['_eq'] = x2pyxl.xleq
     global_['__builtins__'] = dict(
         abs=abs, all=all, any=any, bin=bin, bool=bool, chr=chr,
         divmod=divmod, float=float, hex=hex, int=int, len=len, max=max,
@@ -131,6 +130,7 @@ FILTERS = {
     'trim':         defaults.DEFAULT_FILTERS['trim'],
     'unique':       defaults.DEFAULT_FILTERS['unique'],
     'upper':        defaults.DEFAULT_FILTERS['upper'],
+    'xgroupby':     x2pyxl.xgroupby,
 }
 GLOBALS = {
     'range':        defaults.DEFAULT_NAMESPACE['range'],

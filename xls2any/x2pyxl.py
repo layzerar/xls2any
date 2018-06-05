@@ -2,6 +2,9 @@
 
 import re
 import os
+import functools
+import itertools
+
 import openpyxl
 
 from . import utils
@@ -117,17 +120,57 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
     raise ValueError('错误的区域格式：{0!r}'.format(expr))
 
 
-def xleq(val1, val2):
-    if val1 is val2:
-        return True
-    elif type(val1) is type(val2):
-        return val1 == val2
-    elif type(val1) is str:
-        return val1.strip() == str(val2).strip()
-    elif type(val2) is str:
-        return str(val1).strip() == val2.strip()
+def xeq_(val1, val2):
+    tp_val1 = type(val1)
+    tp_val2 = type(val2)
+    try:
+        if val1 is val2:
+            return True
+        elif tp_val1 is tp_val2:
+            if tp_val1 is tuple:
+                if len(val1) == len(val2):
+                    return all(itertools.starmap(xeq_, zip(val1, val2)))
+                else:
+                    return False
+            else:
+                return val1 == val2
+        elif tp_val1 is tuple or tp_val2 is tuple:
+            return False
+        elif tp_val1 is float:
+            if tp_val2 is int:
+                return val1 == val2
+            elif tp_val2 is str:
+                return val1 == float(val2.strip())
+            else:
+                return False
+        elif tp_val2 is float:
+            if tp_val1 is int:
+                return val2 == val1
+            elif tp_val1 is str:
+                return val2 == float(val1.strip())
+            else:
+                return False
+        elif tp_val1 is str:
+            return val1.strip() == ('' if val2 is None else str(val2))
+        elif tp_val2 is str:
+            return val2.strip() == ('' if val1 is None else str(val1))
+        else:
+            return str(val1) == str(val2)
+    except ValueError:
+        return False
+
+
+def xlt_(val1, val2):
+    return False if xeq_(val1, val2) else id(val1) < id(val2)
+
+
+def xcmp_(val1, val2):
+    if xeq_(val1, val2):
+        return 0
+    elif id(val1) < id(val2):
+        return -1
     else:
-        return str(val1).strip() == str(val2).strip()
+        return 1
 
 
 class ArrayView(object):
@@ -245,10 +288,28 @@ class SheetView(object):
     def vlookup(self, val, tab, idx):
         for row in self.select(tab):
             if row.val(1) is not None \
-                    and xleq(val, row.val(1)):
+                    and xeq_(val, row.val(1)):
                 return row.val(idx)
         Ctx.error('指定区域{0}${1}找不到对应值{2!r}', str(self), tab, val)
         return None
+
+
+def xgroupby(rows, *keys):
+    def getkey(row):
+        return tuple(row.val(key) for key in keys)
+
+    def rowcmp(row1, row2):
+        if xeq_(getkey(row1), getkey(row2)):
+            return 0
+        elif origin_rows.index(row1) < origin_rows.index(row2):
+            return -1
+        else:
+            return 1
+
+    origin_rows = list(rows)
+    sorted_rows = sorted(origin_rows, key=functools.cmp_to_key(rowcmp))
+    for key, group in itertools.groupby(sorted_rows, key=functools.cmp_to_key(rowcmp)):
+        yield key.obj, group
 
 
 def get_worksheet_headers(ws, head):
