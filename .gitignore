@@ -108,3 +108,4 @@ venv.bak/
 
 # others
 examples/*.lua
+xls2any-*
