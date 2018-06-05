@@ -1,0 +1,3 @@
+@ECHO ON
+
+start cmd
