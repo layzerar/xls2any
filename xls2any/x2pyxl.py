@@ -5,6 +5,7 @@ import os
 import datetime
 import functools
 import itertools
+import collections
 
 import openpyxl
 
@@ -15,6 +16,8 @@ Ctx = utils.Ctx
 
 RANGE_SEP = ':'
 COLUMN_NAME_MARK = '@'
+CELLXX_REGEX = \
+    re.compile(r'^([A-Z]+)([1-9][0-9]*)$')
 COLUMN_REGEX = \
     re.compile(r'^([A-Z]+)$')
 RANGE1_REGEX = \
@@ -44,27 +47,44 @@ def parse_column(expr):
             for ich in matches.group(1):
                 col = col * 26 + ord(ich) - 64
             return col
-    raise ValueError('错误的列号格式：{0!r}'.format(expr))
+    Ctx.throw('错误的列号格式：{0!r}', expr)
+
+
+RangeArgs = collections.namedtuple(
+    'RangeArgs',
+    ['hoff', 'voff', 'hnum', 'vnum'],
+)
+
+
+def range_args(lcol, lrow, hcol, hrow):
+    return RangeArgs(lcol - 1, lrow - 1, hcol - lcol + 1, hrow - lrow + 1)
+
+
+def range_expr(lcol, lrow, hcol, hrow):
+    return RANGE_SEP.join([
+        build_column(lcol) + str(lrow),
+        build_column(hcol) + str(hrow),
+    ])
 
 
 def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
+    def make_return(lcol, lrow, hcol, hrow):
+        return (
+            range_expr(lcol, lrow, hcol, hrow),
+            range_args(lcol, lrow, hcol, hrow),
+        )
+
     def make_range1(matches):
         lcol = parse_column(matches.group(1)) \
             if matches.group(1) else min_col
         hcol = parse_column(matches.group(2)) \
             if matches.group(2) else max_col
-        return RANGE_SEP.join([
-            build_column(lcol) + str(min_row),
-            build_column(hcol) + str(max_row),
-        ]), lcol - 1, min_row - 1
+        return make_return(lcol, min_row, hcol, max_row)
 
     def make_range2(matches):
         lrow = int(matches.group(1)) if matches.group(1) else min_row
         hrow = int(matches.group(2)) if matches.group(2) else max_row
-        return RANGE_SEP.join([
-            build_column(min_col) + str(lrow),
-            build_column(max_col) + str(hrow),
-        ]), min_col - 1, lrow - 1
+        return make_return(min_col, lrow, max_col, hrow)
 
     def make_range3(matches):
         lcol = parse_column(matches.group(1)) if matches.group(1) else min_col
@@ -75,31 +95,19 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
             lcol, hcol = hcol, lcol
         if lrow > hrow:
             lrow, hrow = hrow, lrow
-        return RANGE_SEP.join([
-            build_column(lcol) + str(lrow),
-            build_column(hcol) + str(hrow),
-        ]), lcol - 1, lrow - 1
+        return make_return(lcol, lrow, hcol, hrow)
 
     def make_range4(matches):
         icol = parse_column(matches.group(1))
-        return RANGE_SEP.join([
-            build_column(icol) + str(min_row),
-            build_column(icol) + str(max_row),
-        ]), icol - 1, min_row - 1
+        return make_return(icol, min_row, icol, max_row)
 
     def make_range5(matches):
         irow = int(matches.group(1))
-        return RANGE_SEP.join([
-            build_column(min_col) + str(irow),
-            build_column(max_col) + str(irow),
-        ]), min_col - 1, irow - 1
+        return make_return(min_col, irow, max_col, irow)
 
     if isinstance(expr, str):
         if expr.strip() == RANGE_SEP:
-            return RANGE_SEP.join([
-                build_column(min_col) + str(min_row),
-                build_column(max_col) + str(max_row),
-            ]), min_col - 1, min_row - 1
+            return make_return(min_col, min_row, max_col, max_row)
 
         for regex, make_range in [(RANGE1_REGEX, make_range1),
                                   (RANGE2_REGEX, make_range2),
@@ -110,7 +118,7 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
             if matches:
                 return make_range(matches)
 
-    raise ValueError('错误的区域格式：{0!r}'.format(expr))
+    Ctx.throw('错误的区域格式：{0!r}', expr)
 
 
 XEQ_NUM_TYPES = frozenset([
@@ -191,14 +199,22 @@ class ArrayView(object):
             yield elm.value
 
     @property
-    def idx(self):
+    def vidx(self):
         return self._vindex
 
-    def val(self, key):
+    def hidx(self, key):
         if not isinstance(key, int):
-            col = self._sheet.column(key) - self._offset
+            return self._sheet.hidx(key)
         else:
-            col = key
+            if key <= 0:
+                Ctx.throw('无法定位指定列：{0!r}', key)
+            return key + self._offset
+
+    def expr(self, key):
+        return build_column(self.hidx(key)) + str(self._vindex)
+
+    def val(self, key):
+        col = self.hidx(key) - self._offset
         if 0 < col <= len(self._array):
             return self._array[col - 1].value
         return None
@@ -210,13 +226,10 @@ class ArrayView(object):
 
     def slc(self, key, size, num):
         if not isinstance(size, int) or size <= 0:
-            raise ValueError('分组大小必须是大于零的整数：{0!r}'.format(size))
+            Ctx.throw('分组大小必须是大于零的整数：{0!r}', size)
         if not isinstance(num, int) or num < 0:
-            raise ValueError('分组数量必须是不为负的整数：{0!r}'.format(num))
-        if not isinstance(key, int):
-            col = self._sheet.column(key) - self._offset
-        else:
-            col = key
+            Ctx.throw('分组数量必须是不为负的整数：{0!r}', num)
+        col = self.hidx(key) - self._offset
         if 0 < col <= num * size + col - 1 <= len(self._array):
             for idx in range(num):
                 offset = idx * size + col - 1
@@ -227,8 +240,7 @@ class ArrayView(object):
                     self._vindex,
                 )
         else:
-            raise ValueError('分组超出区域范围：{0!r},{1},{2}'.format(
-                build_column(col), size, num))
+            Ctx.throw('分组超出区域范围：{0!r},{1},{2}', key, size, num)
 
     def aslist(self):
         return [elm.value for elm in self._array]
@@ -245,7 +257,7 @@ class SheetView(object):
         self._sheetname = sheetname
         self._worksheet = worksheet
         self._headers = headers or {}
-        self._active = None
+        self._cur_row = None
 
     def __str__(self):
         return '{0}#{1}'.format(self._filename, self._sheetname)
@@ -255,22 +267,33 @@ class SheetView(object):
 
     def __getitem__(self, expr):
         if isinstance(expr, slice):
-            raise ValueError('工作表遍历暂不支持切片：{0!r}'.format(expr))
+            Ctx.throw('工作表遍历不支持切片：{0!r}', expr)
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc, off_col, off_row = parse_ranges(expr, max_col, max_row)
-        for idx, row in enumerate(self._worksheet[slc], 1):
-            Ctx.set_ctx(str(self), off_row + idx)
-            self._active = ArrayView(self, row, off_col, off_row + idx)
-            yield self._active
+        slc_expr, args = parse_ranges(expr, max_col, max_row)
+        for idx, row in enumerate(self._worksheet[slc_expr], 1):
+            Ctx.set_ctx(str(self), args.voff + idx)
+            self._cur_row = ArrayView(self, row, args.hoff, args.voff + idx)
+            yield self._cur_row
 
     @property
-    def active(self):
-        return self._active
+    def cur(self):
+        return self._cur_row
 
-    def column(self, key):
+    def val(self, expr, key=''):
+        if isinstance(expr, int):
+            if expr <= 0:
+                Ctx.throw('行号必须是大于零的整数：{0!r}', expr)
+            row, col = expr, self.hidx(key)
+            expr = build_column(col) + str(row)
+        elif not isinstance(expr, str) \
+                or not CELLXX_REGEX.match(expr):
+            Ctx.throw('错误的单元格式：{0!r}', expr)
+        return self._worksheet[expr].value
+
+    def hidx(self, key):
         if isinstance(key, str):
             if key.startswith(COLUMN_NAME_MARK):
                 col = self._headers.get(key, 0)
@@ -281,31 +304,75 @@ class SheetView(object):
         else:
             col = 0
         if col == 0:
-            raise ValueError('无法根据列名找到指定列：{0!r}'.format(key))
+            Ctx.throw('无法定位指定列：{0!r}', key)
         return col
 
     def select(self, expr):
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
-        if max_row > 0 and max_col > 0:
-            slc, off_col, off_row = parse_ranges(expr, max_col, max_row)
-            if slc is not None:
-                for idx, row in enumerate(self._worksheet[slc], 1):
-                    yield ArrayView(self, row, off_col, off_row + idx)
+        if max_row <= 0 or max_col <= 0:
+            return
+        slc_expr, args = parse_ranges(expr, max_col, max_row)
+        if slc_expr is not None:
+            for idx, row in enumerate(self._worksheet[slc_expr], 1):
+                yield ArrayView(self, row, args.hoff, args.voff + idx)
 
-    def vlookup(self, val, tab, idx):
+    def search(self, val1, tab):
         for row in self.select(tab):
-            if row.val(1) is not None \
-                    and xeq_(val, row.val(1)):
-                return row.val(idx)
-        Ctx.error('指定区域{0}${1}找不到对应值{2!r}', str(self), tab, val)
+            for idx, val2 in enumerate(row, 1):
+                if val2 is not None and xeq_(val1, val2):
+                    return build_column(row.hidx(idx)) + str(row.vidx)
         return None
+
+    def vlookup(self, val1, tab, idx):
+        for row in self.select(tab):
+            if row.val(1) is not None and xeq_(val1, row.val(1)):
+                return row.val(idx)
+        Ctx.error('指定区域{0}!{1}找不到对应值{2!r}', str(self), tab, val1)
+        return None
+
+    def chkuniq(self, tab):
+        max_row = self._worksheet.max_row
+        max_col = self._worksheet.max_column
+        if max_row <= 0 or max_col <= 0:
+            return
+        slc_expr, args = parse_ranges(tab, max_col, max_row)
+        keys = tuple(range(1, args.hnum + 1))
+        iterable = (
+            ArrayView(self, row, args.hoff, args.voff + idx)
+            for idx, row in enumerate(self._worksheet[slc_expr], 1)
+        )
+        for key, group in xgroupby(iterable, *keys):
+            first = None
+            for row in group:
+                if first is None:
+                    first = row
+                    continue
+                Ctx.error('指定区域{0}!{1}含有重复值{2!r}：{3} <-> {4}',
+                          str(self), tab, key, row.vidx, first.vidx)
 
 
 def xrequire(rows, *keys):
     for row in rows:
         if all(not xeq_(row.val(key), '') for key in keys):
             yield row
+
+
+def xpickcol(value, to_int=False):
+    if not isinstance(value, str) \
+            or not CELLXX_REGEX.match(value):
+        Ctx.throw('错误的单元格式：{0!r}', value)
+    expr = CELLXX_REGEX.match(value).group(1)
+    if not to_int:
+        return expr
+    return parse_column(expr)
+
+
+def xpickrow(value):
+    if not isinstance(value, str) \
+            or not CELLXX_REGEX.match(value):
+        Ctx.throw('错误的单元格式：{0!r}', value)
+    return int(CELLXX_REGEX.match(value).group(2))
 
 
 def xgroupby(rows, *keys):
@@ -327,8 +394,8 @@ def xgroupby(rows, *keys):
 
 
 def get_worksheet_headers(ws, head):
-    expr, _, _ = parse_ranges(str(head), ws.max_column, ws.max_row)
-    rows = ws[expr]
+    slc_expr, _ = parse_ranges(str(head), ws.max_column, ws.max_row)
+    rows = ws[slc_expr]
     head_row = rows[0] if isinstance(rows, tuple) else next(rows)
     return {
         COLUMN_NAME_MARK + str(cell.value).strip(): col
@@ -337,7 +404,7 @@ def get_worksheet_headers(ws, head):
     }
 
 
-def load_worksheet(filepath, sheetname, head=1):
+def load_worksheet(filepath, sheetname, head=0):
     try:
         wb = openpyxl.load_workbook(filepath, data_only=True)
         ws = wb[sheetname]

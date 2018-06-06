@@ -4,6 +4,7 @@
 --等级倍率表
 levelRateConfig =
 {
+{%- do ws1.chkuniq('B4:C') %} --检查分组唯一性
 {%- for keys, rows in ws1['4:'] | xgroupby('@id') %}  --数据从第四行开始取
 	{
 	    id = {{ keys[0] }},		--倍率表id

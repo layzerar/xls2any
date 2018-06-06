@@ -98,6 +98,29 @@ def do_next(env, value, num=1):
     return cur
 
 
+def do_splitf(value, nth=1, fs=None):
+    idx = 0
+    cur = 0
+    value = str(value)
+    matches = re.finditer('(%s)+' % (fs or ' '), value)
+    while idx < nth:
+        try:
+            match = next(matches)
+        except StopIteration:
+            if cur < len(value):
+                idx += 1
+                if idx == nth:
+                    return value[cur:]
+            break
+        else:
+            if match.start() > 0:
+                idx += 1
+                if idx == nth:
+                    return value[cur:match.start()]
+            cur = match.end()
+    return ''
+
+
 FILTERS = {
     'abs':          defaults.DEFAULT_FILTERS['abs'],
     'check':        do_check,
@@ -125,12 +148,15 @@ FILTERS = {
     'round':        defaults.DEFAULT_FILTERS['round'],
     's':            defaults.DEFAULT_FILTERS['string'],
     'sort':         defaults.DEFAULT_FILTERS['sort'],
+    'splitf':       do_splitf,
     'str':          defaults.DEFAULT_FILTERS['string'],
     'sum':          defaults.DEFAULT_FILTERS['sum'],
     'trim':         defaults.DEFAULT_FILTERS['trim'],
     'unique':       defaults.DEFAULT_FILTERS['unique'],
     'upper':        defaults.DEFAULT_FILTERS['upper'],
     'xgroupby':     x2pyxl.xgroupby,
+    'xpickcol':     x2pyxl.xpickcol,
+    'xpickrow':     x2pyxl.xpickrow,
     'xrequire':     x2pyxl.xrequire,
 }
 TESTS = dict(defaults.DEFAULT_TESTS)
@@ -140,6 +166,7 @@ TESTS.update({
 GLOBALS = {
     'abort':        Ctx.abort,
     'cycler':       defaults.DEFAULT_NAMESPACE['cycler'],
+    'debug':        Ctx.debug,
     'dict':         defaults.DEFAULT_NAMESPACE['dict'],
     'error':        Ctx.error,
     'joiner':       defaults.DEFAULT_NAMESPACE['joiner'],
@@ -147,6 +174,7 @@ GLOBALS = {
     'namespace':    defaults.DEFAULT_NAMESPACE['namespace'],
     'output':       ignore_return(utils.open_as_stdout),
     'range':        defaults.DEFAULT_NAMESPACE['range'],
+    'throw':        Ctx.throw,
 }
 
 
@@ -173,9 +201,11 @@ def print_version(ctx, param, value):
 
 @click.command()
 @click.argument('template', type=click.File('rb'))
+@click.option('--debug', is_flag=True)
 @click.option('--verbose', is_flag=True)
 @click.option('--version', is_flag=True, callback=print_version, expose_value=False, is_eager=True)
-def main(template, verbose):
+def main(template, debug, verbose):
+    Ctx.set_debug(debug)
     if verbose:
         @Ctx.set_abort_handler
         def _at_abort():
@@ -189,7 +219,7 @@ def main(template, verbose):
     try:
         j2txt = j2data.decode(encoding, errors="ignore")
     except (LookupError, TypeError):
-        Ctx.set_ctx(template.name, 1)
+        Ctx.set_ctx(os.path.basename(template.name), 1)
         Ctx.abort('无法识别模板文件的文件编码')
 
     j2env = jinja2.Environment(
@@ -207,7 +237,7 @@ def main(template, verbose):
     try:
         j2res = j2env.from_string(j2txt).render()
     except Exception:
-        Ctx.set_ctx(template.name, get_j2exc_lineno())
-        Ctx.abort('处理模板文件时发生错误：{0}', get_pyexc_msg())
+        Ctx.set_ctx(os.path.basename(template.name), get_j2exc_lineno())
+        Ctx.abort('处理模板文件时发生错误 => {0}', get_pyexc_msg())
     else:
         print(j2res, file=sys.stdout, flush=True)

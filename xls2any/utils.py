@@ -13,6 +13,7 @@ class Ctx(object):
     _ctx_arg = {}
     _log_fmt = '%(color)s%(asctime)s %(level)s [%(context)s] %(message)s%(reset)s'
     _at_abort = None
+    _in_debug = False
 
     @classmethod
     def set_ctx(cls, filename, lineno):
@@ -20,6 +21,10 @@ class Ctx(object):
             filename=filename,
             lineno=lineno,
         )
+
+    @classmethod
+    def set_debug(cls, flag):
+        cls._in_debug = bool(flag)
 
     @classmethod
     def get_msg(cls, color, level, message, reset=colorama.Style.RESET_ALL):
@@ -34,20 +39,35 @@ class Ctx(object):
         return cls._log_fmt % locals()
 
     @classmethod
-    def error(cls, msg, *args, **kwds):
+    def debug(cls, msg, *args, **kwds):
+        if not cls._in_debug:
+            return
         line = cls.get_msg(
-            colorama.Fore.CYAN,
-            'ERROR',
-            msg.format(*args, **kwds),
+            colorama.Fore.LIGHTGREEN_EX,
+            'DEBUG',
+            str(msg).format(*args, **kwds),
         )
         print(line, file=sys.stderr)
 
     @classmethod
+    def error(cls, msg, *args, **kwds):
+        line = cls.get_msg(
+            colorama.Fore.LIGHTYELLOW_EX,
+            'ERROR',
+            str(msg).format(*args, **kwds),
+        )
+        print(line, file=sys.stderr)
+
+    @classmethod
+    def throw(cls, msg, *args, exc_tp=ValueError, **kwds):
+        raise exc_tp(str(msg).format(*args, **kwds))
+
+    @classmethod
     def abort(cls, msg, *args, **kwds):
         line = cls.get_msg(
-            colorama.Fore.RED,
+            colorama.Fore.LIGHTRED_EX,
             'FATAL',
-            msg.format(*args, **kwds),
+            str(msg).format(*args, **kwds),
         )
         print(line, file=sys.stderr)
         at_abort = cls._at_abort or (lambda: sys.exit(1))

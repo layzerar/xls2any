@@ -4,6 +4,10 @@ import io
 import re
 import datetime
 
+from . import utils
+
+Ctx = utils.Ctx
+
 
 LUA_IDENT_REGEX = \
     re.compile(r'^([a-zA-Z_][a-zA-Z0-9_]*)$')
@@ -151,7 +155,7 @@ class LuaEncoder(object):
         elif tp is datetime.date:
             buf.write(date_tolua(obj))
         else:
-            raise TypeError('不能将{}转换为Lua类型'.format(tp.__name__))
+            Ctx.throw('不能将{0}转换为Lua类型', tp.__name__, exc_tp=TypeError)
 
 
 def dumps(obj, **kwds):
