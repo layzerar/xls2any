@@ -21,6 +21,8 @@ CELLXX_REGEX = \
     re.compile(r'^([A-Z]+)([1-9][0-9]*)$')
 COLUMN_REGEX = \
     re.compile(r'^([A-Z]+)$')
+VINDEX_REGEX = \
+    re.compile(r'^([1-9][0-9]*)$')
 RANGE1_REGEX = \
     re.compile(r'^([A-Z]+)?:([A-Z]+)?$')
 RANGE2_REGEX = \
@@ -28,8 +30,7 @@ RANGE2_REGEX = \
 RANGE3_REGEX = \
     re.compile(r'^([A-Z]+)?([1-9][0-9]*)?:([A-Z]+)?([1-9][0-9]*)?$')
 RANGE4_REGEX = COLUMN_REGEX
-RANGE5_REGEX = \
-    re.compile(r'^([1-9][0-9]*)$')
+RANGE5_REGEX = VINDEX_REGEX
 
 DEFAULT_DATETIME = datetime.datetime(1900, 1, 1)
 
@@ -440,9 +441,7 @@ def xpickcol(value, to_int=False):
             or not CELLXX_REGEX.match(value):
         Ctx.throw('错误的单元格式：{0!r}', value)
     expr = CELLXX_REGEX.match(value).group(1)
-    if not to_int:
-        return expr
-    return parse_column(expr)
+    return parse_column(expr) if to_int else expr
 
 
 def xpickrow(value):
@@ -450,6 +449,23 @@ def xpickrow(value):
             or not CELLXX_REGEX.match(value):
         Ctx.throw('错误的单元格式：{0!r}', value)
     return int(CELLXX_REGEX.match(value).group(2))
+
+
+def xoffset(value, hoff=1, voff=0):
+    if not isinstance(value, str) \
+            or not CELLXX_REGEX.match(value):
+        Ctx.throw('错误的单元格式：{0!r}', value)
+    if not isinstance(hoff, int):
+        Ctx.throw('水平位移量必须是整数：{0!r}', hoff)
+    if not isinstance(voff, int):
+        Ctx.throw('垂直位移量必须是整数：{0!r}', voff)
+    if hoff == 0 and voff == 0:
+        return value
+    hpar, vpar = CELLXX_REGEX.match(value).groups()
+    hidx, vidx = parse_column(hpar), int(vpar)
+    if hidx + hoff <= 0 or vidx + voff <= 0:
+        Ctx.throw('单元偏移超出范围：{0!r},{1},{2}', value, hoff, voff)
+    return build_column(hidx + hoff) + str(vidx + voff)
 
 
 def xgroupby(rows, *keys):

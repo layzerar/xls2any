@@ -155,6 +155,7 @@ FILTERS = {
     'unique':       defaults.DEFAULT_FILTERS['unique'],
     'upper':        defaults.DEFAULT_FILTERS['upper'],
     'xgroupby':     x2pyxl.xgroupby,
+    'xoffset':      x2pyxl.xoffset,
     'xpickcol':     x2pyxl.xpickcol,
     'xpickrow':     x2pyxl.xpickrow,
     'xrequire':     x2pyxl.xrequire,
