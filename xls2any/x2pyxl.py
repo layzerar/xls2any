@@ -16,6 +16,7 @@ Ctx = utils.Ctx
 
 
 RANGE_SEP = ':'
+RANGE_NIL = '...'
 COLUMN_NAME_MARK = '@'
 CELLXX_REGEX = \
     re.compile(r'^([A-Z]+)([1-9][0-9]*)$')
@@ -351,6 +352,8 @@ class SheetView(object):
                 str(expr.start or ''),
                 str(expr.stop or ''),
             ])
+        if expr.strip() == RANGE_NIL:
+            return
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
@@ -379,7 +382,7 @@ class SheetView(object):
     def hidx(self, key):
         if isinstance(key, str):
             if key.startswith(COLUMN_NAME_MARK):
-                col = self._headers.get(key, 0)
+                col = self._headers.get(key[1:], 0)
             else:
                 col = parse_column(key)
         elif isinstance(key, int):
@@ -389,6 +392,25 @@ class SheetView(object):
         if col == 0:
             Ctx.throw('无法定位指定列：{0!r}', key)
         return col
+
+    def rehead(self, vhead):
+        max_row = self._worksheet.max_row
+        max_col = self._worksheet.max_column
+        if max_row <= 0 or max_col <= 0:
+            return self
+        slc_expr, _ = parse_ranges(str(vhead), max_col, max_row)
+        for head_row in self._worksheet[slc_expr]:
+            return type(self)(
+                self._filepath,
+                self._sheetname,
+                self._worksheet,
+                headers={
+                    str(cell.value).strip(): col
+                    for col, cell in enumerate(head_row, 1)
+                    if cell.value not in {None, ''}
+                },
+            )
+        return self
 
     def select(self, expr):
         max_row = self._worksheet.max_row
@@ -400,11 +422,36 @@ class SheetView(object):
             for idx, row in enumerate(self._worksheet[slc_expr], 1):
                 yield ArrayView(self, row, args.hoff, args.voff + idx)
 
+    def locate(self, name):
+        tag_start = '<%s>' % name
+        tag_close = '</%s>' % name
+        vhead, start, close = None, None, None
+        for row in self.select(RANGE_SEP):
+            for idx, val in enumerate(row, 1):
+                if val is None:
+                    continue
+                if start is None and xeq_(tag_start, val):
+                    vhead = row.vidx
+                    start = row.expr(idx)
+                if close is None and xeq_(tag_close, val):
+                    close = row.expr(idx)
+        if start is None:
+            Ctx.error('找不匹配的起始标签：{0}', tag_start)
+            return self[RANGE_NIL]
+        if close is None:
+            Ctx.error('找不匹配的结束标签：{0}', tag_close)
+            return self[RANGE_NIL]
+        slc_expr = RANGE_SEP.join([
+            xoffset(start, 0, 1), 
+            xoffset(close, 0, -1),
+        ])
+        return self.rehead(vhead)[slc_expr]
+
     def search(self, val1, tab):
         for row in self.select(tab):
             for idx, val2 in enumerate(row, 1):
                 if val2 is not None and xeq_(val1, val2):
-                    return build_column(row.hidx(idx)) + str(row.vidx)
+                    return row.expr(idx)
         return None
 
     def vlookup(self, val1, tab, idx):
@@ -493,17 +540,6 @@ def xgroupby(rows, *keys):
         yield getkey(key.obj), group
 
 
-def get_worksheet_headers(ws, head):
-    slc_expr, _ = parse_ranges(str(head), ws.max_column, ws.max_row)
-    rows = ws[slc_expr]
-    head_row = rows[0] if isinstance(rows, tuple) else next(rows)
-    return {
-        COLUMN_NAME_MARK + str(cell.value).strip(): col
-        for col, cell in enumerate(head_row, 1)
-        if cell.value not in {None, ''}
-    }
-
-
 def load_worksheet(filepath, sheetname, head=0):
     try:
         wb = openpyxl.load_workbook(filepath, data_only=True)
@@ -513,8 +549,7 @@ def load_worksheet(filepath, sheetname, head=0):
     except KeyError:
         Ctx.abort('无法打开目标工作表：{0}#{1}', filepath, sheetname)
 
+    sheet_view = SheetView(filepath, sheetname, ws)
     if 0 < head <= ws.max_row:
-        headers = get_worksheet_headers(ws, head)
-    else:
-        headers = None
-    return SheetView(filepath, sheetname, ws, headers=headers)
+        sheet_view = sheet_view.rehead(head)
+    return sheet_view
