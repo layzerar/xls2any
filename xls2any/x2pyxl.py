@@ -17,7 +17,7 @@ Ctx = utils.Ctx
 
 RANGE_SEP = ':'
 RANGE_NIL = '...'
-COLUMN_NAME_MARK = '@'
+COLKEY_TOKEN = '@'
 CELLXX_REGEX = \
     re.compile(r'^([A-Z]+)([1-9][0-9]*)$')
 COLUMN_REGEX = \
@@ -292,10 +292,21 @@ class ArrayView(object):
     def expr(self, key):
         return build_column(self.hidx(key)) + str(self._vindex)
 
-    def vals(self, *keys):
-        return tuple(self.val(key) for key in keys)
+    def keys(self, *idxs, token=True):
+        def impl(idxs, offset, maxidx):
+            for hidx in idxs:
+                if not isinstance(hidx, int) or hidx <= 0:
+                    Ctx.throw('索引必须是大于零的整数：{0!r}', hidx)
+                if hidx > maxidx:
+                    Ctx.throw('索引超出区域范围：{0!r}', hidx)
+                yield offset + hidx
+        idxs = tuple(impl(idxs, self._offset, len(self._array)))
+        return self._sheet.keys(*idxs, token=token)
 
-    def val(self, key):
+    def vals(self, *keys):
+        return tuple(self.valx(key) for key in keys)
+
+    def valx(self, key):
         col = self.hidx(key) - self._offset
         if 0 < col <= len(self._array):
             return self._array[col - 1].value
@@ -328,7 +339,11 @@ class ArrayView(object):
         return [elm.value for elm in self._array]
 
     def asdict(self, *keys):
-        return {key: elm.value for key, elm in zip(keys, self._array)}
+        if not keys:
+            idx0 = self._offset + 1
+            idxs = tuple(range(idx0, idx0 + len(self._array)))
+            keys = self._sheet.keys(*idxs, token=False)
+        return {str(key): elm.value for key, elm in zip(keys, self._array)}
 
 
 class SheetView(object):
@@ -368,23 +383,12 @@ class SheetView(object):
             yield self._cur_row
 
     @property
-    def cur(self):
+    def vobj(self):
         return self._cur_row
-
-    def val(self, expr, key=''):
-        if isinstance(expr, int):
-            if expr <= 0:
-                Ctx.throw('行号必须是大于零的整数：{0!r}', expr)
-            row, col = expr, self.hidx(key)
-            expr = build_column(col) + str(row)
-        elif not isinstance(expr, str) \
-                or not CELLXX_REGEX.match(expr):
-            Ctx.throw('错误的单元格式：{0!r}', expr)
-        return self._worksheet[expr].value
 
     def hidx(self, key):
         if isinstance(key, str):
-            if key.startswith(COLUMN_NAME_MARK):
+            if key.startswith(COLKEY_TOKEN):
                 col = self._headers.get(key[1:], 0)
             else:
                 col = parse_column(key)
@@ -396,6 +400,25 @@ class SheetView(object):
             Ctx.throw('无法定位指定列：{0!r}', key)
         return col
 
+    def keys(self, *idxs, token=True):
+        def impl(idxs, headers):
+            for hidx in idxs:
+                if not isinstance(hidx, int) or hidx <= 0:
+                    Ctx.throw('索引必须是大于零的整数：{0!r}', hidx)
+                if hidx not in headers:
+                    Ctx.throw('索引指向的列不包含表头：{0!r}', hidx)
+                if token:
+                    yield COLKEY_TOKEN + headers[hidx]
+                else:
+                    yield headers[hidx]
+        return tuple(impl(idxs, self._headers))
+
+    def valx(self, expr):
+        if not isinstance(expr, str) \
+                or not CELLXX_REGEX.match(expr):
+            Ctx.throw('错误的单元格式：{0!r}', expr)
+        return self._worksheet[expr].value
+
     def rehead(self, vhead):
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
@@ -403,15 +426,17 @@ class SheetView(object):
             return self
         slc_expr, _ = parse_ranges(str(vhead), max_col, max_row)
         for head_row in self._worksheet[slc_expr]:
+            headers = {
+                (str(cell.value).strip(), col)
+                for col, cell in enumerate(head_row, 1)
+                if cell.value not in {None, ''}
+            }
+            headers.update((val, key) for key, val in list(headers.items()))
             return type(self)(
                 self._filepath,
                 self._sheetname,
                 self._worksheet,
-                headers={
-                    str(cell.value).strip(): col
-                    for col, cell in enumerate(head_row, 1)
-                    if cell.value not in {None, ''}
-                },
+                headers=headers,
             )
         return self
 
@@ -425,57 +450,59 @@ class SheetView(object):
             for idx, row in enumerate(self._worksheet[slc_expr], 1):
                 yield ArrayView(self, row, args.hoff, args.voff + idx)
 
-    def locate(self, name):
-        tag_start = '<%s>' % name
-        tag_close = '</%s>' % name
-        vhead, start, close = None, None, None
+    def locate(self, ltag, htag, loff=1, hoff=-1):
+        vhead, lexpr, hexpr = None, None, None
         for row in self.select(RANGE_SEP):
             for idx, val in enumerate(row, 1):
                 if val is None:
                     continue
-                if start is None and xeq_(tag_start, val):
+                if lexpr is None and xeq_(ltag, val):
                     vhead = row.vidx
-                    start = row.expr(idx)
-                if close is None and xeq_(tag_close, val):
-                    close = row.expr(idx)
+                    lexpr = row.expr(idx)
+                    continue
+                if hexpr is None and xeq_(htag, val):
+                    hexpr = row.expr(idx)
                     break
-        if start is None:
-            Ctx.error('找不匹配的起始标签：{0}', tag_start)
+        if lexpr is None:
+            Ctx.error('找不匹配的起始标签：{0}', ltag)
             return self[RANGE_NIL]
-        if close is None:
-            Ctx.error('找不匹配的结束标签：{0}', tag_close)
+        if hexpr is None:
+            Ctx.error('找不匹配的结束标签：{0}', htag)
             return self[RANGE_NIL]
         slc_expr = RANGE_SEP.join([
-            xoffset(start, 0, 1), 
-            xoffset(close, 0, -1),
+            xoffset(lexpr, 1, loff),
+            xoffset(hexpr, 0, hoff),
         ])
         return self.rehead(vhead)[slc_expr]
 
     def findone(self, val1, tab):
-        if isinstance(val1, tuple):
-            keys = tuple(range(1, len(val1) + 1))
-            valx = lambda row: row.vals(*keys)
-        else:
-            valx = lambda row: row.val(1)
-        for row in self.select(tab):
-            if xeq_(val1, valx(row)):
-                return row.expr(1)
-        return None
+        for row in self.findall(val1, tab):
+            return row.expr(1)
+        Ctx.throw('指定区域\'{0}\'!{1}找不到对应值{2!r}', str(self), tab, val1)
 
     def findall(self, val1, tab):
         if isinstance(val1, tuple):
+            if len(val1) <= 0:
+                Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
             keys = tuple(range(1, len(val1) + 1))
-            valx = lambda row: row.vals(*keys)
+            valx = (lambda row: row.vals(*keys))
         else:
-            valx = lambda row: row.val(1)
+            valx = (lambda row: row.valx(1))
         for row in self.select(tab):
             if xeq_(val1, valx(row)):
                 yield row
 
     def vlookup(self, val1, tab, idx):
+        if isinstance(val1, tuple):
+            if len(val1) <= 0:
+                Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
+            keys = tuple(range(1, len(val1) + 1))
+            valx = (lambda row: row.vals(*keys))
+        else:
+            valx = (lambda row: row.valx(1))
         for row in self.select(tab):
-            if row.val(1) is not None and xeq_(val1, row.val(1)):
-                return row.val(idx)
+            if xeq_(val1, valx(row)):
+                return row.valx(idx)
         Ctx.error('指定区域\'{0}\'!{1}找不到对应值{2!r}', str(self), tab, val1)
         return None
 
@@ -502,7 +529,7 @@ class SheetView(object):
 
 def xrequire(rows, *keys):
     for row in rows:
-        if all(not xeq_(row.val(key), '') for key in keys):
+        if all(not xeq_(row.valx(key), '') for key in keys):
             yield row
 
 
@@ -540,7 +567,7 @@ def xoffset(value, hoff=1, voff=0):
 
 def xgroupby(rows, *keys):
     def getkey(row):
-        return tuple(row.val(key) for key in keys)
+        return tuple(row.valx(key) for key in keys)
 
     def rowcmp(row1, row2):
         key1 = getkey(row1)
