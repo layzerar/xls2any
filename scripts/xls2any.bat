@@ -1,8 +1,5 @@
-@ECHO OFF
-CD "%~dp0"
-
 @ECHO ON
-.\xls2any.exe %*
+"%~dp0xls2any.exe" %*
 @ECHO OFF
 
 PAUSE
