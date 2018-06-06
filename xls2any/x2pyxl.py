@@ -292,6 +292,9 @@ class ArrayView(object):
     def expr(self, key):
         return build_column(self.hidx(key)) + str(self._vindex)
 
+    def vals(self, *keys):
+        return tuple(self.val(key) for key in keys)
+
     def val(self, key):
         col = self.hidx(key) - self._offset
         if 0 < col <= len(self._array):
@@ -435,6 +438,7 @@ class SheetView(object):
                     start = row.expr(idx)
                 if close is None and xeq_(tag_close, val):
                     close = row.expr(idx)
+                    break
         if start is None:
             Ctx.error('找不匹配的起始标签：{0}', tag_start)
             return self[RANGE_NIL]
@@ -447,12 +451,26 @@ class SheetView(object):
         ])
         return self.rehead(vhead)[slc_expr]
 
-    def search(self, val1, tab):
+    def findone(self, val1, tab):
+        if isinstance(val1, tuple):
+            keys = tuple(range(1, len(val1) + 1))
+            valx = lambda row: row.vals(*keys)
+        else:
+            valx = lambda row: row.val(1)
         for row in self.select(tab):
-            for idx, val2 in enumerate(row, 1):
-                if val2 is not None and xeq_(val1, val2):
-                    return row.expr(idx)
+            if xeq_(val1, valx(row)):
+                return row.expr(1)
         return None
+
+    def findall(self, val1, tab):
+        if isinstance(val1, tuple):
+            keys = tuple(range(1, len(val1) + 1))
+            valx = lambda row: row.vals(*keys)
+        else:
+            valx = lambda row: row.val(1)
+        for row in self.select(tab):
+            if xeq_(val1, valx(row)):
+                yield row
 
     def vlookup(self, val1, tab, idx):
         for row in self.select(tab):
