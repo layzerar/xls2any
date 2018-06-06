@@ -8,6 +8,7 @@ import itertools
 import collections
 
 import openpyxl
+import dateutil.parser as dateparser
 
 from . import utils
 
@@ -29,6 +30,8 @@ RANGE3_REGEX = \
 RANGE4_REGEX = COLUMN_REGEX
 RANGE5_REGEX = \
     re.compile(r'^([1-9][0-9]*)$')
+
+DEFAULT_DATETIME = datetime.datetime(1900, 1, 1)
 
 
 def build_column(col):
@@ -121,15 +124,84 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
     Ctx.throw('错误的区域格式：{0!r}', expr)
 
 
-XEQ_NUM_TYPES = frozenset([
-    int, float, bool, complex,
-])
-XEQ_ALL_TYPES = frozenset([
-    str, int, float, type(None), bool, complex,
-    datetime.datetime,
-    datetime.date,
-    tuple,
-])
+def _fit_str_num(val1, val2):
+    try:
+        return float(val1.strip()), val2
+    except ValueError:
+        return val1.strip(), str(val2)
+
+
+def _fit_str_bool(val1, val2):
+    try:
+        return float(val1.strip()), val2
+    except ValueError:
+        return val1.strip(), '1' if val2 else '0'
+
+
+def _fit_str_datetime(val1, val2):
+    try:
+        fit1 = dateparser.parse(
+            val1.strip(), fuzzy=False, ignoretz=True, default=DEFAULT_DATETIME)
+    except (ValueError, OverflowError):
+        return val1.strip(), str(val2)
+    else:
+        if isinstance(val2, datetime.date):
+            return fit1, datetime.datetime.combine(val2, datetime.time())
+        else:
+            return fit1, val2
+
+
+def _fit_date_datetime(val1, val2):
+    return datetime.datetime.combine(val1, datetime.time()), val2
+
+
+def _fit_datetime_date(val1, val2):
+    return val1, datetime.datetime.combine(val2, datetime.time())
+
+
+def _fit_nothing2(val1, val2):
+    return val1, val2
+
+
+XEQ_ALL_TYPES = {
+    int: 10,
+    float: 11,
+    bool: 12,
+    datetime.datetime: 21,
+    datetime.date: 22,
+    str: 30,
+    tuple: 40,
+    type(None): 50,
+}
+XEQ_FIT_TYPES = {
+    # cast types
+    (str, int):                 _fit_str_num,
+    (str, float):               _fit_str_num,
+    (str, bool):                _fit_str_bool,
+    (str, datetime.date):       _fit_str_datetime,
+    (str, datetime.datetime):   _fit_str_datetime,
+    (str, type(None)):          (lambda v1, _: (v1.strip(), '')),
+    (type(None), str):          (lambda _, v2: ('', v2.strip())),
+    (str, str):                 (lambda v1, v2: (v1.strip(), v2.strip())),
+
+    # compatible types
+    (int, int):                 _fit_nothing2,
+    (int, float):               _fit_nothing2,
+    (int, bool):                _fit_nothing2,
+    (float, float):             _fit_nothing2,
+    (float, int):               _fit_nothing2,
+    (float, bool):              _fit_nothing2,
+    (bool, int):                _fit_nothing2,
+    (bool, float):              _fit_nothing2,
+    (bool, bool):               _fit_nothing2,
+    (type(None), type(None)):   _fit_nothing2,
+
+    # datetime types
+    (datetime.date, datetime.date):         _fit_nothing2,
+    (datetime.date, datetime.datetime):     _fit_date_datetime,
+    (datetime.datetime, datetime.date):     _fit_datetime_date,
+    (datetime.datetime, datetime.datetime): _fit_nothing2,
+}
 
 
 def xeq_(val1, val2):
@@ -137,47 +209,52 @@ def xeq_(val1, val2):
     tp_val2 = type(val2)
     if tp_val1 not in XEQ_ALL_TYPES \
             or tp_val2 not in XEQ_ALL_TYPES:
-        return False
+        Ctx.throw('不支持该类型之间的比较：{0} <-> {1}',
+                  tp_val1.__name__, tp_val2.__name__)
     elif val1 is val2:
         return True
-    elif tp_val1 is tuple \
-            or tp_val2 is tuple:
-        if tp_val1 is tp_val2 \
-                and len(val1) == len(val2):
-            return all(itertools.starmap(xeq_, zip(val1, val2)))
-        return False
-    elif tp_val1 is tp_val2:
-        return val1 == val2
-    elif tp_val1 in XEQ_NUM_TYPES \
-            and tp_val2 in XEQ_NUM_TYPES:
-        return val1 == val2
-    elif tp_val1 is float \
-            or tp_val2 is float:
-        try:
-            if tp_val1 is str:
-                return val1 == float(val2.strip())
-            elif tp_val2 is str:
-                return val2 == float(val1.strip())
-            else:
-                return False
-        except ValueError:
+    elif tp_val1 is tuple and tp_val2 is tuple:
+        if len(val1) != len(val2):
             return False
-    elif tp_val1 is str:
-        return val1.strip() == ('' if val2 is None else str(val2))
-    elif tp_val2 is str:
-        return val2.strip() == ('' if val1 is None else str(val1))
+        return all(itertools.starmap(xeq_, zip(val1, val2)))
+    elif (tp_val1, tp_val2) in XEQ_FIT_TYPES:
+        fit1, fit2 = XEQ_FIT_TYPES[(tp_val1, tp_val2)](val1, val2)
+        return fit1 == fit2
+    elif (tp_val2, tp_val1) in XEQ_FIT_TYPES:
+        fit2, fit1 = XEQ_FIT_TYPES[(tp_val2, tp_val1)](val2, val1)
+        return fit1 == fit2
     else:
         return False
 
 
 def xlt_(val1, val2):
-    return False if xeq_(val1, val2) else id(val1) < id(val2)
+    tp_val1 = type(val1)
+    tp_val2 = type(val2)
+    if tp_val1 not in XEQ_ALL_TYPES \
+            or tp_val2 not in XEQ_ALL_TYPES:
+        Ctx.throw('不支持该类型之间的比较：{0} <-> {1}',
+                  tp_val1.__name__, tp_val2.__name__)
+    elif val1 is val2:
+        return False
+    elif tp_val1 is tuple and tp_val2 is tuple:
+        for elm1, elm2 in zip(val1, val2):
+            if not xeq_(elm1, elm2):
+                return xlt_(elm1, elm2)
+        return len(val1) < len(val2)
+    elif (tp_val1, tp_val2) in XEQ_FIT_TYPES:
+        fit1, fit2 = XEQ_FIT_TYPES[(tp_val1, tp_val2)](val1, val2)
+        return fit1 < fit2
+    elif (tp_val2, tp_val1) in XEQ_FIT_TYPES:
+        fit2, fit1 = XEQ_FIT_TYPES[(tp_val2, tp_val1)](val2, val1)
+        return fit1 < fit2
+    else:
+        return XEQ_ALL_TYPES[tp_val1] < XEQ_ALL_TYPES[tp_val2]
 
 
 def xcmp_(val1, val2):
     if xeq_(val1, val2):
         return 0
-    elif id(val1) < id(val2):
+    elif xlt_(val1, val2):
         return -1
     else:
         return 1
@@ -328,7 +405,7 @@ class SheetView(object):
         for row in self.select(tab):
             if row.val(1) is not None and xeq_(val1, row.val(1)):
                 return row.val(idx)
-        Ctx.error('指定区域{0}!{1}找不到对应值{2!r}', str(self), tab, val1)
+        Ctx.error('指定区域\'{0}\'!{1}找不到对应值{2!r}', str(self), tab, val1)
         return None
 
     def chkuniq(self, tab):
@@ -348,7 +425,7 @@ class SheetView(object):
                 if first is None:
                     first = row
                     continue
-                Ctx.error('指定区域{0}!{1}含有重复值{2!r}：{3} <-> {4}',
+                Ctx.error('指定区域\'{0}\'!{1}含有重复值{2!r}：{3} <-> {4}',
                           str(self), tab, key, row.vidx, first.vidx)
 
 
@@ -380,9 +457,11 @@ def xgroupby(rows, *keys):
         return tuple(row.val(key) for key in keys)
 
     def rowcmp(row1, row2):
-        if xeq_(getkey(row1), getkey(row2)):
+        key1 = getkey(row1)
+        key2 = getkey(row2)
+        if xeq_(key1, key2):
             return 0
-        elif origin_rows.index(row1) < origin_rows.index(row2):
+        elif xlt_(key1, key2):
             return -1
         else:
             return 1

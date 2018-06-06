@@ -161,7 +161,9 @@ FILTERS = {
 }
 TESTS = dict(defaults.DEFAULT_TESTS)
 TESTS.update({
+    'xcmp':         x2pyxl.xcmp_,
     'xeq':          x2pyxl.xeq_,
+    'xlt':          x2pyxl.xlt_,
 })
 GLOBALS = {
     'abort':        Ctx.abort,
