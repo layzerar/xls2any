@@ -345,7 +345,12 @@ class SheetView(object):
 
     def __getitem__(self, expr):
         if isinstance(expr, slice):
-            Ctx.throw('工作表遍历不支持切片：{0!r}', expr)
+            if expr.step is not None:
+                Ctx.throw('工作表不支持间隔切片：{0!r}', expr)
+            expr = RANGE_SEP.join([
+                str(expr.start or ''),
+                str(expr.stop or ''),
+            ])
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
