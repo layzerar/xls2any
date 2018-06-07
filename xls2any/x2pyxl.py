@@ -468,7 +468,7 @@ class SheetView(object):
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(expr, max_col, max_row)
+        slc_expr, args = parse_ranges(expr, max_col, max_row, self._headers)
         if slc_expr is not None:
             for idx, row in enumerate(self._worksheet[slc_expr], 1):
                 yield ArrayView(self, row, args.hoff, args.voff + idx)
@@ -534,7 +534,7 @@ class SheetView(object):
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(tab, max_col, max_row)
+        slc_expr, args = parse_ranges(tab, max_col, max_row, self._headers)
         keys = tuple(range(1, args.hnum + 1))
         iterable = (
             ArrayView(self, row, args.hoff, args.voff + idx)
