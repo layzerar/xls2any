@@ -400,8 +400,12 @@ class SheetView(object):
             yield self._cur_row
 
     @property
-    def vobj(self):
-        return self._cur_row
+    def vobj(self, idx=None):
+        if idx is None:
+            return self._cur_row
+        if not isinstance(idx, int) or idx <= 0:
+            Ctx.throw('无法定位指定行：{0!r}', idx)
+        return ArrayView(self, self._worksheet[str(idx)], 0, idx)
 
     def hidx(self, key):
         if isinstance(key, str):
