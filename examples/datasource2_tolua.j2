@@ -10,7 +10,7 @@ levelRateConfig =
 	    id = {{ keys[0] }},		--倍率表id
 		rateList  = {
 			{%- for row in rows %}
-			{level = {{ row.valx('@level') }}, rate = {{ row.valx('@rate') }}}, --等级,奖励倍率,非万份比
+			{level = {{ row['@level'] }}, rate = {{ row['@rate'] }}}, --等级,奖励倍率,非万份比
 			{%- endfor %}
 		},
 	},

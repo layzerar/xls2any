@@ -7,17 +7,17 @@ Test =
     -- 从第3行开始读到结束
     {%- for row in ws1['3:'] %}
     {
-        mon_id = {{ row.valx(1) | check('x < 1005') | lua }}, -- 获取当前行第1列的值
-        mon_name = {{ row.valx('B') | lua }}, -- 获取当前行B列的值
+        mon_id = {{ row[1] | check('x < 1005') | lua }}, -- 获取当前行第1列的值
+        mon_name = {{ row['B'] | lua }}, -- 获取当前行B列的值
         mon_pos = {{ row.cut('@mon_pos_x', 3).asdict('pos_x', 'pos_y', 'pos_z') | lua }}, -- 获取当前行第@mon_pos_x列开始切分三列作为Lua表
-        drop_prob = {{ (row.valx('@mon_drop_prob') / 100) | lua }},
+        drop_prob = {{ (row['@mon_drop_prob'] / 100) | lua }},
         mon_drops = {
             -- 获取当前行第@drop1_item列开始以2列为一组切成3组
             {%- for grp in row.slc('@drop1_item', 2, 3) %}
             {{ grp.asdict('id', 'weight') | lua }},  -- 把当前组按提供的字段名生成Lua表
             {%- endfor %}
         },
-        model_id = {{ ws2.vlookup(row.valx('@mon_model'), 'B4:C13', 2) | lua }}, -- 根据当前行第@mon_model列的去查找(vlookup方式)ws2中'B4:C13'的值
+        model_id = {{ ws2.vlookup(row['@mon_model'], 'B4:C13', 2) | lua }}, -- 根据当前行第@mon_model列的去查找(vlookup方式)ws2中'B4:C13'的值
     },
     {%- endfor %}
     {{ {'abc': 1, 'def': 2, 3: 6} | lua(indent=4) | indent(4) }},   -- 例子1：由Python字典生成Lua表
