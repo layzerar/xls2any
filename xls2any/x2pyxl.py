@@ -289,6 +289,11 @@ class ArrayView(object):
         for elm in self._array:
             yield elm.value
 
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            Ctx.throw('行对象不支持切片：{0!r}', key)
+        return self.valx(key)
+
     @property
     def vidx(self):
         return self._vindex
