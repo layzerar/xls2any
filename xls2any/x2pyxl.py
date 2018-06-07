@@ -18,20 +18,24 @@ Ctx = utils.Ctx
 RANGE_SEP = ':'
 RANGE_NIL = '...'
 COLKEY_TOKEN = '@'
+COLKEY_REGEX = \
+    re.compile(r'^(@[^,:]+)$', re.IGNORECASE)
 CELLXX_REGEX = \
-    re.compile(r'^([A-Z]+)([1-9][0-9]*)$')
+    re.compile(r'^([A-Z]+)([1-9][0-9]*)$', re.IGNORECASE)
 COLUMN_REGEX = \
-    re.compile(r'^([A-Z]+)$')
+    re.compile(r'^([A-Z]+)$', re.IGNORECASE)
 VINDEX_REGEX = \
-    re.compile(r'^([1-9][0-9]*)$')
+    re.compile(r'^([1-9][0-9]*)$', re.IGNORECASE)
 RANGE1_REGEX = \
-    re.compile(r'^([A-Z]+)?:([A-Z]+)?$')
+    re.compile(
+        r'^(?:(@[^,:]+)(,[1-9][0-9]*)?|([A-Z]+)?([1-9][0-9]*)?)'
+        r':(?:(@[^,:]+)(,[1-9][0-9]*)?|([A-Z]+)?([1-9][0-9]*)?)$',
+        re.IGNORECASE)
 RANGE2_REGEX = \
-    re.compile(r'^([1-9][0-9]*)?:([1-9][0-9]*)?$')
-RANGE3_REGEX = \
-    re.compile(r'^([A-Z]+)?([1-9][0-9]*)?:([A-Z]+)?([1-9][0-9]*)?$')
-RANGE4_REGEX = COLUMN_REGEX
-RANGE5_REGEX = VINDEX_REGEX
+    re.compile(
+        r'^(?:(@[^,:]+)|([A-Z]+))$',
+        re.IGNORECASE)
+RANGE3_REGEX = VINDEX_REGEX
 
 DEFAULT_DATETIME = datetime.datetime(1900, 1, 1)
 
@@ -72,7 +76,7 @@ def range_expr(lcol, lrow, hcol, hrow):
     ])
 
 
-def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
+def parse_ranges(expr, max_col, max_row, headers=None, min_col=1, min_row=1):
     def make_return(lcol, lrow, hcol, hrow):
         return (
             range_expr(lcol, lrow, hcol, hrow),
@@ -80,33 +84,43 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
         )
 
     def make_range1(matches):
-        lcol = parse_column(matches.group(1)) \
-            if matches.group(1) else min_col
-        hcol = parse_column(matches.group(2)) \
-            if matches.group(2) else max_col
-        return make_return(lcol, min_row, hcol, max_row)
-
-    def make_range2(matches):
-        lrow = int(matches.group(1)) if matches.group(1) else min_row
-        hrow = int(matches.group(2)) if matches.group(2) else max_row
-        return make_return(min_col, lrow, max_col, hrow)
-
-    def make_range3(matches):
-        lcol = parse_column(matches.group(1)) if matches.group(1) else min_col
-        lrow = int(matches.group(2)) if matches.group(2) else min_row
-        hcol = parse_column(matches.group(3)) if matches.group(3) else max_col
-        hrow = int(matches.group(4)) if matches.group(4) else max_row
+        if matches.group(1):
+            lkey = matches.group(1)
+            lcol = headers.get(lkey[1:], 0) if headers else 0
+            if lcol == 0:
+                Ctx.throw('无法定位指定列：{0!r}', lkey)
+            lrow = int(matches.group(2)[1:]) if matches.group(2) else min_row
+        else:
+            lcol = parse_column(matches.group(3)) \
+                if matches.group(3) else min_col
+            lrow = int(matches.group(4)) if matches.group(4) else min_row
+        if matches.group(5):
+            hkey = matches.group(5)
+            hcol = headers.get(hkey[1:], 0) if headers else 0
+            if hcol == 0:
+                Ctx.throw('无法定位指定列：{0!r}', hkey)
+            hrow = int(matches.group(6)[1:]) if matches.group(6) else max_row
+        else:
+            hcol = parse_column(matches.group(7)) \
+                if matches.group(7) else max_col
+            hrow = int(matches.group(8)) if matches.group(8) else max_row
         if lcol > hcol:
             lcol, hcol = hcol, lcol
         if lrow > hrow:
             lrow, hrow = hrow, lrow
         return make_return(lcol, lrow, hcol, hrow)
 
-    def make_range4(matches):
-        icol = parse_column(matches.group(1))
+    def make_range2(matches):
+        if matches.group(1):
+            ikey = matches.group(1)
+            icol = headers.get(ikey[1:], 0) if headers else 0
+            if icol == 0:
+                Ctx.throw('无法定位指定列：{0!r}', ikey)
+        else:
+            icol = parse_column(matches.group(2))
         return make_return(icol, min_row, icol, max_row)
 
-    def make_range5(matches):
+    def make_range3(matches):
         irow = int(matches.group(1))
         return make_return(min_col, irow, max_col, irow)
 
@@ -116,10 +130,8 @@ def parse_ranges(expr, max_col, max_row, min_col=1, min_row=1):
 
         for regex, make_range in [(RANGE1_REGEX, make_range1),
                                   (RANGE2_REGEX, make_range2),
-                                  (RANGE3_REGEX, make_range3),
-                                  (RANGE4_REGEX, make_range4),
-                                  (RANGE5_REGEX, make_range5)]:
-            matches = regex.match(expr.strip().upper())
+                                  (RANGE3_REGEX, make_range3)]:
+            matches = regex.match(expr.strip())
             if matches:
                 return make_range(matches)
 
@@ -376,7 +388,7 @@ class SheetView(object):
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(expr, max_col, max_row)
+        slc_expr, args = parse_ranges(expr, max_col, max_row, self._headers)
         for idx, row in enumerate(self._worksheet[slc_expr], 1):
             Ctx.set_ctx(str(self), args.voff + idx)
             self._cur_row = ArrayView(self, row, args.hoff, args.voff + idx)
@@ -415,19 +427,25 @@ class SheetView(object):
 
     def valx(self, expr):
         if not isinstance(expr, str) \
-                or not CELLXX_REGEX.match(expr):
+                or not CELLXX_REGEX.match(expr.strip()):
             Ctx.throw('错误的单元格式：{0!r}', expr)
-        return self._worksheet[expr].value
+        return self._worksheet[expr.strip().upper()].value
 
-    def rehead(self, vhead):
+    def rehead(self, head):
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return self
-        slc_expr, _ = parse_ranges(str(vhead), max_col, max_row)
+        if isinstance(head, int):
+            if head <= 0:
+                Ctx.throw('无法定位指定行：{0!r}', head)
+        else:
+            if not VINDEX_REGEX.match(str(head).strip()):
+                Ctx.throw('无法定位指定行：{0!r}', head)
+        slc_expr, _ = parse_ranges(str(head), max_col, max_row)
         for head_row in self._worksheet[slc_expr]:
             headers = {
-                (str(cell.value).strip(), col)
+                str(cell.value).strip(): col
                 for col, cell in enumerate(head_row, 1)
                 if cell.value not in {None, ''}
             }
@@ -535,22 +553,22 @@ def xrequire(rows, *keys):
 
 def xpickcol(value, to_int=False):
     if not isinstance(value, str) \
-            or not CELLXX_REGEX.match(value):
+            or not CELLXX_REGEX.match(value.strip()):
         Ctx.throw('错误的单元格式：{0!r}', value)
-    expr = CELLXX_REGEX.match(value).group(1)
+    expr = CELLXX_REGEX.match(value.strip()).group(1)
     return parse_column(expr) if to_int else expr
 
 
 def xpickrow(value):
     if not isinstance(value, str) \
-            or not CELLXX_REGEX.match(value):
+            or not CELLXX_REGEX.match(value.strip()):
         Ctx.throw('错误的单元格式：{0!r}', value)
-    return int(CELLXX_REGEX.match(value).group(2))
+    return int(CELLXX_REGEX.match(value.strip()).group(2))
 
 
 def xoffset(value, hoff=1, voff=0):
     if not isinstance(value, str) \
-            or not CELLXX_REGEX.match(value):
+            or not CELLXX_REGEX.match(value.strip()):
         Ctx.throw('错误的单元格式：{0!r}', value)
     if not isinstance(hoff, int):
         Ctx.throw('水平位移量必须是整数：{0!r}', hoff)
@@ -558,7 +576,7 @@ def xoffset(value, hoff=1, voff=0):
         Ctx.throw('垂直位移量必须是整数：{0!r}', voff)
     if hoff == 0 and voff == 0:
         return value
-    hpar, vpar = CELLXX_REGEX.match(value).groups()
+    hpar, vpar = CELLXX_REGEX.match(value.strip()).groups()
     hidx, vidx = parse_column(hpar), int(vpar)
     if hidx + hoff <= 0 or vidx + voff <= 0:
         Ctx.throw('单元偏移超出范围：{0!r},{1},{2}', value, hoff, voff)

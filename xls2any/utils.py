@@ -87,6 +87,6 @@ def open_as_stdout(filename, encoding='utf-8'):
     try:
         sys.stdout = open(filename, 'w', encoding=encoding)
     except IOError:
-        Ctx.error('无法打开目标输出流：{0}', filename)
+        Ctx.throw('无法打开目标输出流：{0}', filename)
     except LookupError:
-        Ctx.error('错误的文件编码名称：{0}', encoding)
+        Ctx.throw('错误的文件编码名称：{0}', encoding)
