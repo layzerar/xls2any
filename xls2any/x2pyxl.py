@@ -291,7 +291,15 @@ class ArrayView(object):
 
     def __getitem__(self, key):
         if isinstance(key, slice):
-            Ctx.throw('行对象不支持切片：{0!r}', key)
+            if key.step is not None:
+                Ctx.throw('行对象不支持间隔切片：{0!r}', key)
+            if key.start is None and key.stop is None:
+                return self
+            hidx1 = 1 if key.start is None else key.start
+            hidx2 = len(self._array) + 1 if key.stop is None else key.stop
+            hidx1 = self.hidx(hidx1) - self._offset
+            hidx2 = self.hidx(hidx2) - self._offset
+            return self.cut(min(hidx1, hidx2), abs(hidx2 - hidx1) + 1)
         return self.valx(key)
 
     @property
@@ -400,12 +408,21 @@ class SheetView(object):
             yield self._cur_row
 
     @property
-    def vobj(self, idx=None):
-        if idx is None:
+    def vobj(self, vidx=None):
+        if vidx is None:
             return self._cur_row
-        if not isinstance(idx, int) or idx <= 0:
-            Ctx.throw('无法定位指定行：{0!r}', idx)
-        return ArrayView(self, self._worksheet[str(idx)], 0, idx)
+        if self._worksheet.max_row <= 0 \
+                or self._worksheet.max_column <= 0:
+            return None
+        if isinstance(vidx, int):
+            if vidx <= 0:
+                Ctx.throw('无法定位指定行：{0!r}', vidx)
+        else:
+            if not isinstance(vidx, str) or \
+                    not VINDEX_REGEX.match(vidx.strip()):
+                Ctx.throw('无法定位指定行：{0!r}', vidx)
+            vidx = int(vidx.strip())
+        return ArrayView(self, self._worksheet[str(vidx)], 0, vidx)
 
     def hidx(self, key):
         if isinstance(key, str):
@@ -440,18 +457,20 @@ class SheetView(object):
             Ctx.throw('错误的单元格式：{0!r}', expr)
         return self._worksheet[expr.strip().upper()].value
 
-    def rehead(self, head):
+    def rehead(self, vidx):
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return self
-        if isinstance(head, int):
-            if head <= 0:
-                Ctx.throw('无法定位指定行：{0!r}', head)
+        if isinstance(vidx, int):
+            if vidx <= 0:
+                Ctx.throw('无法定位指定行：{0!r}', vidx)
         else:
-            if not VINDEX_REGEX.match(str(head).strip()):
-                Ctx.throw('无法定位指定行：{0!r}', head)
-        slc_expr, _ = parse_ranges(str(head), max_col, max_row)
+            if not isinstance(vidx, str) or \
+                    not VINDEX_REGEX.match(vidx.strip()):
+                Ctx.throw('无法定位指定行：{0!r}', vidx)
+            vidx = int(vidx.strip())
+        slc_expr, _ = parse_ranges(str(vidx), max_col, max_row)
         for head_row in self._worksheet[slc_expr]:
             headers = {
                 str(cell.value).strip(): col
