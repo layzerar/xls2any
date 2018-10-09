@@ -2,6 +2,7 @@
 
 import re
 import os
+import sys
 import datetime
 import functools
 import itertools
@@ -373,12 +374,17 @@ class ArrayView(object):
 
 class SheetView(object):
 
-    def __init__(self, filepath, sheetname, worksheet, headers=None):
+    def __init__(self, filepath, sheetname, worksheet,
+                 headers=None, beg_col=None, beg_row=None, end_col=None, end_row=None):
         self._filepath = filepath
         self._filename = os.path.basename(filepath)
         self._sheetname = sheetname
         self._worksheet = worksheet
         self._headers = headers or {}
+        self._beg_col = beg_col or 1
+        self._beg_row = beg_row or 1
+        self._end_col = end_col or self._worksheet.max_column
+        self._end_row = end_row or self._worksheet.max_row
         self._cur_row = None
 
     def __str__(self):
@@ -401,8 +407,9 @@ class SheetView(object):
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(expr, max_col, max_row, self._headers)
-        for idx, row in enumerate(self._worksheet[slc_expr], 1):
+        slc_expr, args = parse_ranges(
+            expr, max_col, max_row, self._headers, min_col=self._beg_col)
+        for idx, row in xslice(self._worksheet[slc_expr], self._beg_row, self._end_row):
             Ctx.set_ctx(str(self), args.voff + idx)
             self._cur_row = ArrayView(self, row, args.hoff, args.voff + idx)
             yield self._cur_row
@@ -457,7 +464,7 @@ class SheetView(object):
             Ctx.throw('错误的单元格式：{0!r}', expr)
         return self._worksheet[expr.strip().upper()].value
 
-    def rehead(self, vidx):
+    def rehead(self, vidx, hbeg=None, vbeg=None, hend=None, vend=None):
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
@@ -470,7 +477,8 @@ class SheetView(object):
                     not VINDEX_REGEX.match(vidx.strip()):
                 Ctx.throw('无法定位指定行：{0!r}', vidx)
             vidx = int(vidx.strip())
-        slc_expr, _ = parse_ranges(str(vidx), max_col, max_row)
+        slc_expr, _ = parse_ranges(
+            str(vidx), max_col, max_row, min_col=self._beg_col)
         for head_row in self._worksheet[slc_expr]:
             headers = {
                 str(cell.value).strip(): col
@@ -483,6 +491,10 @@ class SheetView(object):
                 self._sheetname,
                 self._worksheet,
                 headers=headers,
+                beg_col=hbeg,
+                beg_row=vbeg,
+                end_col=hend,
+                end_row=vend,
             )
         return self
 
@@ -491,39 +503,42 @@ class SheetView(object):
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(expr, max_col, max_row, self._headers)
+        slc_expr, args = parse_ranges(
+            expr, max_col, max_row, self._headers, min_col=self._beg_col)
         if slc_expr is not None:
-            for idx, row in enumerate(self._worksheet[slc_expr], 1):
+            for idx, row in xslice(self._worksheet[slc_expr], self._beg_row, self._end_row):
                 yield ArrayView(self, row, args.hoff, args.voff + idx)
 
     def locate(self, ltag, htag, loff=1, hoff=-1):
-        vhead, lexpr, hexpr = None, None, None
+        hbeg, vbeg, hend, vend = None, None, None, None
         for row in self.select(RANGE_SEP):
             for idx, val in enumerate(row, 1):
                 if val is None:
                     continue
-                if lexpr is None and xeq_(ltag, val):
-                    vhead = row.vidx
-                    lexpr = row.expr(idx)
+                if vbeg is None and xeq_(ltag, val):
+                    vbeg = row.vidx
+                    hbeg = row.hidx(idx)
                     continue
-                if hexpr is None and xeq_(htag, val):
-                    hexpr = row.expr(idx)
+                if vend is None and xeq_(htag, val):
+                    vend = row.vidx
+                    hend = row.hidx(idx)
                     break
-        if lexpr is None:
+        if vbeg is None:
             Ctx.error('找不匹配的起始标签：{0}', ltag)
             return self[RANGE_NIL]
-        if hexpr is None:
+        if vend is None:
             Ctx.error('找不匹配的结束标签：{0}', htag)
             return self[RANGE_NIL]
-        slc_expr = RANGE_SEP.join([
-            xoffset(lexpr, 1, loff),
-            xoffset(hexpr, 0, hoff),
-        ])
-        return self.rehead(vhead)[slc_expr]
+        return self.rehead(
+            vbeg,
+            hbeg=hbeg + 1,
+            vbeg=vbeg + loff,
+            hend=hend + 0,
+            vend=vend + hoff)
 
     def findone(self, val1, tab):
         for row in self.findall(val1, tab):
-            return row.expr(1)
+            return row
         Ctx.throw('指定区域\'{0}\'!{1}找不到对应值{2!r}', str(self), tab, val1)
 
     def findall(self, val1, tab):
@@ -557,11 +572,12 @@ class SheetView(object):
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(tab, max_col, max_row, self._headers)
+        slc_expr, args = parse_ranges(
+            tab, max_col, max_row, self._headers, min_col=self._beg_col)
         keys = tuple(range(1, args.hnum + 1))
         iterable = (
             ArrayView(self, row, args.hoff, args.voff + idx)
-            for idx, row in enumerate(self._worksheet[slc_expr], 1)
+            for idx, row in xslice(self._worksheet[slc_expr], self._beg_row, self._end_row)
         )
         for key, group in xgroupby(iterable, *keys):
             first = None
@@ -571,6 +587,15 @@ class SheetView(object):
                     continue
                 Ctx.error('指定区域\'{0}\'!{1}含有重复值{2!r}：{3} <-> {4}',
                           str(self), tab, key, row.vidx, first.vidx)
+
+
+def xslice(rows, vbeg=1, vend=sys.maxsize):
+    for idx, row in enumerate(rows, 1):
+        if idx > vend:
+            break
+        elif idx < vbeg:
+            continue
+        yield idx, row
 
 
 def xrequire(rows, *keys):
