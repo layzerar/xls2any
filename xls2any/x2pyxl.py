@@ -636,7 +636,7 @@ def xoffset(value, hoff=1, voff=0):
     return build_column(hidx + hoff) + str(vidx + voff)
 
 
-def xgroupby(rows, *keys):
+def xgroupby(rows, *keys, asc=True, required=True):
     def getkey(row):
         return tuple(row.valx(key) for key in keys)
 
@@ -650,10 +650,10 @@ def xgroupby(rows, *keys):
         else:
             return 1
 
-    origin_rows = list(rows)
-    sorted_rows = sorted(origin_rows, key=functools.cmp_to_key(rowcmp))
+    origin_rows = rows if not required else xrequire(rows, *keys)
+    sorted_rows = sorted(origin_rows, key=functools.cmp_to_key(rowcmp), reverse=not asc)
     for key, group in itertools.groupby(sorted_rows, key=functools.cmp_to_key(rowcmp)):
-        yield getkey(key.obj), group
+        yield key.obj, group
 
 
 def load_worksheet(filepath, sheetname, head=0):
