@@ -275,7 +275,7 @@ def xcmp_(val1, val2):
         return 1
 
 
-class ArrayView(object):
+class XlRowView(object):
 
     def __init__(self, sheet, array, offset, vindex):
         self._sheet = sheet
@@ -411,7 +411,7 @@ class SheetView(object):
             expr, max_col, max_row, self._headers, min_col=self._beg_col)
         for idx, row in xslice(self._worksheet[slc_expr], self._beg_row, self._end_row):
             Ctx.set_ctx(str(self), args.voff + idx)
-            self._cur_row = ArrayView(self, row, args.hoff, args.voff + idx)
+            self._cur_row = XlRowView(self, row, args.hoff, args.voff + idx)
             yield self._cur_row
 
     @property
@@ -429,7 +429,7 @@ class SheetView(object):
                     not VINDEX_REGEX.match(vidx.strip()):
                 Ctx.throw('无法定位指定行：{0!r}', vidx)
             vidx = int(vidx.strip())
-        return ArrayView(self, self._worksheet[str(vidx)], 0, vidx)
+        return XlRowView(self, self._worksheet[str(vidx)], 0, vidx)
 
     def hidx(self, key):
         if isinstance(key, str):
@@ -507,7 +507,7 @@ class SheetView(object):
             expr, max_col, max_row, self._headers, min_col=self._beg_col)
         if slc_expr is not None:
             for idx, row in xslice(self._worksheet[slc_expr], self._beg_row, self._end_row):
-                yield ArrayView(self, row, args.hoff, args.voff + idx)
+                yield XlRowView(self, row, args.hoff, args.voff + idx)
 
     def locate(self, ltag, htag, loff=1, hoff=-1):
         hbeg, vbeg, hend, vend = None, None, None, None
@@ -576,7 +576,7 @@ class SheetView(object):
             tab, max_col, max_row, self._headers, min_col=self._beg_col)
         keys = tuple(range(1, args.hnum + 1))
         iterable = (
-            ArrayView(self, row, args.hoff, args.voff + idx)
+            XlRowView(self, row, args.hoff, args.voff + idx)
             for idx, row in xslice(self._worksheet[slc_expr], self._beg_row, self._end_row)
         )
         for key, group in xgroupby(iterable, *keys):
