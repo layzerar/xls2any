@@ -286,10 +286,6 @@ class XlRowView(object):
     def __len__(self):
         return len(self._array)
 
-    def __iter__(self):
-        for elm in self._array:
-            yield elm.value
-
     def __getitem__(self, key):
         if isinstance(key, slice):
             if key.step is not None:
@@ -600,6 +596,8 @@ class SheetView(object):
 
 
 def xslice(rows, vbeg=1, vend=sys.maxsize):
+    if not hasattr(rows, '__iter__'):
+        Ctx.throw('xslice 的传入参数必须是集合')
     for idx, row in enumerate(rows, 1):
         if idx > vend:
             break
@@ -609,6 +607,8 @@ def xslice(rows, vbeg=1, vend=sys.maxsize):
 
 
 def xrequire(rows, *keys):
+    if not hasattr(rows, '__iter__'):
+        Ctx.throw('xrequire 的传入参数必须是集合')
     for row in rows:
         if all(not xeq_(row.valx(key), '') for key in keys):
             yield row
@@ -647,6 +647,9 @@ def xoffset(value, hoff=1, voff=0):
 
 
 def xgroupby(rows, *keys, asc=True, required=True):
+    if not hasattr(rows, '__iter__'):
+        Ctx.throw('xgroupby 的传入参数必须是集合')
+
     def getkey(row):
         return tuple(row.valx(key) for key in keys)
 
