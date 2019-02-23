@@ -87,7 +87,7 @@ def parse_ranges(expr, max_col, max_row, headers=None, min_col=1, min_row=1):
     def make_range1(matches):
         if matches.group(1):
             lkey = matches.group(1)
-            lcol = headers.get(lkey[1:], 0) if headers else 0
+            lcol = headers.get(lkey[1:], [0])[0] if headers else 0
             if lcol == 0:
                 Ctx.throw('无法定位指定列：{0!r}', lkey)
             lrow = int(matches.group(2)[1:]) if matches.group(2) else min_row
@@ -97,7 +97,7 @@ def parse_ranges(expr, max_col, max_row, headers=None, min_col=1, min_row=1):
             lrow = int(matches.group(4)) if matches.group(4) else min_row
         if matches.group(5):
             hkey = matches.group(5)
-            hcol = headers.get(hkey[1:], 0) if headers else 0
+            hcol = headers.get(hkey[1:], [0])[0] if headers else 0
             if hcol == 0:
                 Ctx.throw('无法定位指定列：{0!r}', hkey)
             hrow = int(matches.group(6)[1:]) if matches.group(6) else max_row
@@ -114,7 +114,7 @@ def parse_ranges(expr, max_col, max_row, headers=None, min_col=1, min_row=1):
     def make_range2(matches):
         if matches.group(1):
             ikey = matches.group(1)
-            icol = headers.get(ikey[1:], 0) if headers else 0
+            icol = headers.get(ikey[1:], [0])[0] if headers else 0
             if icol == 0:
                 Ctx.throw('无法定位指定列：{0!r}', ikey)
         else:
@@ -307,13 +307,13 @@ class XlRowView(object):
     def vidx(self):
         return self._vindex
 
-    def hidx(self, key):
-        if not isinstance(key, int):
-            return self._sheet.hidx(key)
-        else:
+    def hidx(self, key, multi=False):
+        if isinstance(key, int):
             if key <= 0:
                 Ctx.throw('无法定位指定列：{0!r}', key)
-            return key + self._offset
+            return self._sheet.hidx(key + self._offset, multi=multi)
+        else:
+            return self._sheet.hidx(key, multi=multi)
 
     def expr(self, key):
         return build_column(self.hidx(key)) + str(self._vindex)
@@ -338,28 +338,30 @@ class XlRowView(object):
             return self._array[col - 1].value
         return None
 
-    def cut(self, key, size):
+    def cut(self, key, size=1):
         for elm in self.slc(key, size, 1):
             return elm
         return None
 
-    def slc(self, key, size, num):
+    def slc(self, key, size=1, num=0):
         if not isinstance(size, int) or size <= 0:
             Ctx.throw('分组大小必须是大于零的整数：{0!r}', size)
         if not isinstance(num, int) or num < 0:
             Ctx.throw('分组数量必须是不为负的整数：{0!r}', num)
-        col = self.hidx(key) - self._offset
-        if 0 < col <= num * size + col - 1 <= len(self._array):
-            for idx in range(num):
-                offset = idx * size + col - 1
-                yield type(self)(
-                    self._sheet,
-                    self._array[offset:offset+size],
-                    self._offset + offset,
-                    self._vindex,
-                )
+        if num == 0:
+            offsets = [col - self._offset - 1 for col in self.hidx(key, multi=True)]
         else:
+            offset = self.hidx(key) - self._offset
+            offsets = [idx * size + offset - 1 for idx in range(num)]
+        if offsets[0] < 0 or offsets[-1] + size > len(self._array):
             Ctx.throw('分组超出区域范围：{0!r},{1},{2}', key, size, num)
+        for offset in offsets:
+            yield type(self)(
+                self._sheet,
+                self._array[offset:offset+size],
+                self._offset + offset,
+                self._vindex,
+            )
 
     def aslist(self):
         return [elm.value for elm in self._array]
@@ -431,7 +433,7 @@ class SheetView(object):
             vidx = int(vidx.strip())
         return XlRowView(self, self._worksheet[str(vidx)], 0, vidx)
 
-    def hidx(self, key):
+    def hidx(self, key, multi=False):
         if isinstance(key, str):
             if key.startswith(COLKEY_TOKEN):
                 col = self._headers.get(key[1:], 0)
@@ -441,9 +443,12 @@ class SheetView(object):
             col = key if key > 0 else 0
         else:
             col = 0
-        if col == 0:
-            Ctx.throw('无法定位指定列：{0!r}', key)
-        return col
+        if isinstance(col, int):
+            if col == 0:
+                Ctx.throw('无法定位指定列：{0!r}', key)
+            return [col] if multi else col
+        else:
+            return col if multi else col[0]
 
     def keys(self, *idxs, token=True):
         def impl(idxs, headers):
@@ -480,12 +485,17 @@ class SheetView(object):
         slc_expr, _ = parse_ranges(
             str(vidx), max_col, max_row, min_col=self._beg_col)
         for head_row in self._worksheet[slc_expr]:
-            headers = {
-                str(cell.value).strip(): col
-                for col, cell in enumerate(head_row, 1)
-                if cell.value not in {None, ''}
-            }
-            headers.update((val, key) for key, val in list(headers.items()))
+            headers = {}
+            for col, cell in enumerate(head_row, 1):
+                if cell.value is None:
+                    continue
+                key = str(cell.value).strip()
+                if not key:
+                    continue
+                vals = headers.get(key, [])
+                headers[key] = vals + [col]
+            for key, vals in list(headers.items()):
+                headers.update((val, key) for val in vals)
             return type(self)(
                 self._filepath,
                 self._sheetname,
