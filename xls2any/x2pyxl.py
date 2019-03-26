@@ -359,15 +359,21 @@ class XlRowView(object):
                 self._vindex,
             )
 
-    def aslist(self):
-        return [elm.value for elm in self._array]
+    def aslist(self, skip_none=False):
+        if not skip_none:
+            return [elm.value for elm in self._array]
+        else:
+            return [elm.value for elm in self._array if not xeq_(elm.value, None)]
 
-    def asdict(self, *keys):
+    def asdict(self, *keys, skip_none=False):
         if not keys:
             idx0 = self._offset + 1
             idxs = tuple(range(idx0, idx0 + len(self._array)))
             keys = self._sheet.keys(*idxs, token=False)
-        return {str(key): elm.value for key, elm in zip(keys, self._array)}
+        if not skip_none:
+            return {str(key): elm.value for key, elm in zip(keys, self._array)}
+        else:
+            return {str(key): elm.value for key, elm in zip(keys, self._array) if not xeq_(elm.value, None)}
 
 
 class SheetView(object):
@@ -551,6 +557,7 @@ class SheetView(object):
         if isinstance(val1, (tuple, list)):
             if len(val1) <= 0:
                 Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
+            val1 = tuple(val1)
             keys = tuple(range(1, len(val1) + 1))
             valx = (lambda row: row.vals(*keys))
         else:
@@ -563,6 +570,7 @@ class SheetView(object):
         if isinstance(val1, (tuple, list)):
             if len(val1) <= 0:
                 Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
+            val1 = tuple(val1)
             keys = tuple(range(1, len(val1) + 1))
             valx = (lambda row: row.vals(*keys))
         else:
