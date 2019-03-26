@@ -548,7 +548,7 @@ class SheetView(object):
         Ctx.throw('指定区域\'{0}\'!{1}找不到对应值{2!r}', str(self), tab, val1)
 
     def findall(self, val1, tab):
-        if isinstance(val1, tuple):
+        if isinstance(val1, (tuple, list)):
             if len(val1) <= 0:
                 Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
             keys = tuple(range(1, len(val1) + 1))
@@ -560,7 +560,7 @@ class SheetView(object):
                 yield row
 
     def vlookup(self, val1, tab, idx):
-        if isinstance(val1, tuple):
+        if isinstance(val1, (tuple, list)):
             if len(val1) <= 0:
                 Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
             keys = tuple(range(1, len(val1) + 1))
