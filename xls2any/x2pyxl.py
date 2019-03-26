@@ -307,9 +307,13 @@ class XlRowView(object):
         if isinstance(key, int):
             if key <= 0:
                 Ctx.throw('无法定位指定列：{0!r}', key)
-            return self._sheet.hidx(key + self._offset, multi=multi)
+            hoff = self._offset
+            hmax = hoff + len(self._array)
+            return self._sheet.hidx(hoff + key, multi=multi, hoff=hoff, hmax=hmax)
         else:
-            return self._sheet.hidx(key, multi=multi)
+            hoff = self._offset
+            hmax = hoff + len(self._array)
+            return self._sheet.hidx(key, multi=multi, hoff=hoff, hmax=hmax)
 
     def expr(self, key):
         return build_column(self.hidx(key)) + str(self._vindex)
@@ -435,14 +439,15 @@ class SheetView(object):
             vidx = int(vidx.strip())
         return XlRowView(self, self._worksheet[str(vidx)], 0, vidx)
 
-    def hidx(self, key, multi=False):
+    def hidx(self, key, multi=False, hoff=0, hmax=sys.maxsize):
         if isinstance(key, str):
             if key.startswith(COLKEY_TOKEN):
-                col = self._headers.get(key[1:], 0)
+                ret = [x for x in self._headers.get(key[1:], []) if hoff < x and x <= hmax]
+                col = ret if ret else 0
             else:
                 col = parse_column(key)
         elif isinstance(key, int):
-            col = key if key > 0 else 0
+            col = key if hoff < key and key <= hmax else 0
         else:
             col = 0
         if isinstance(col, int):
