@@ -20,7 +20,7 @@ RANGE_SEP = ':'
 RANGE_NIL = '...'
 COLKEY_TOKEN = '@'
 COLKEY_REGEX = \
-    re.compile(r'^(@[^,:]+)$', re.IGNORECASE)
+    re.compile(r'^(@[^,$:]+)$', re.IGNORECASE)
 CELLXX_REGEX = \
     re.compile(r'^([A-Z]+)([1-9][0-9]*)$', re.IGNORECASE)
 COLUMN_REGEX = \
@@ -29,12 +29,12 @@ VINDEX_REGEX = \
     re.compile(r'^([1-9][0-9]*)$', re.IGNORECASE)
 RANGE1_REGEX = \
     re.compile(
-        r'^(?:(@[^,:]+)(,[1-9][0-9]*)?|([A-Z]+)?([1-9][0-9]*)?)'
-        r':(?:(@[^,:]+)(,[1-9][0-9]*)?|([A-Z]+)?([1-9][0-9]*)?)$',
+        r'^(?:(@[^,$:]+)([,$][1-9][0-9]*)?|([A-Z]+)?([1-9][0-9]*)?)'
+        r':(?:(@[^,$:]+)([,$][1-9][0-9]*)?|([A-Z]+)?([1-9][0-9]*)?)$',
         re.IGNORECASE)
 RANGE2_REGEX = \
     re.compile(
-        r'^(?:(@[^,:]+)|([A-Z]+))$',
+        r'^(?:(@[^,$:]+)|([A-Z]+))$',
         re.IGNORECASE)
 RANGE3_REGEX = VINDEX_REGEX
 
@@ -367,7 +367,7 @@ class XlRowView(object):
         if not skip_none:
             return [elm.value for elm in self._array]
         else:
-            return [elm.value for elm in self._array if not xeq_(elm.value, None)]
+            return [elm.value for elm in self._array if not xeq_(elm.value, '')]
 
     def asdict(self, *keys, skip_none=False):
         if not keys:
@@ -377,7 +377,7 @@ class XlRowView(object):
         if not skip_none:
             return {str(key): elm.value for key, elm in zip(keys, self._array)}
         else:
-            return {str(key): elm.value for key, elm in zip(keys, self._array) if not xeq_(elm.value, None)}
+            return {str(key): elm.value for key, elm in zip(keys, self._array) if not xeq_(elm.value, '')}
 
 
 class SheetView(object):
@@ -494,7 +494,7 @@ class SheetView(object):
         for head_row in self._worksheet[slc_expr]:
             headers = {}
             for col, cell in enumerate(head_row, 1):
-                if cell.value is None:
+                if xeq_(cell.value, ''):
                     continue
                 key = str(cell.value).strip()
                 if not key:
@@ -684,7 +684,7 @@ def xgroupby(rows, *keys, asc=True, required=True):
 
 def load_worksheet(filepath, sheetname, head=0):
     try:
-        wb = openpyxl.load_workbook(filepath, data_only=True)
+        wb = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
         ws = wb[sheetname]
     except IOError:
         Ctx.abort('无法打开目标工作簿：{0}', filepath)
