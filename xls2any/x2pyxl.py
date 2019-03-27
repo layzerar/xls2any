@@ -3,6 +3,7 @@
 import re
 import os
 import sys
+import ctypes
 import datetime
 import functools
 import itertools
@@ -139,140 +140,164 @@ def parse_ranges(expr, max_col, max_row, headers=None, min_col=1, min_row=1):
     Ctx.throw('错误的区域格式：{0!r}', expr)
 
 
-def _fit_str_num(val1, val2):
+try:
+    _libc_strcmp = ctypes.cdll.msvcrt.strcmp
+except OSError:
     try:
-        return float(val1.strip()), val2
-    except ValueError:
-        return val1.strip(), str(val2)
+        _libc_strcmp = ctypes.CDLL("libc.so.6").strcmp
+    except OSError:
+        def _libc_strcmp(str1, str2):
+            if str1 == str2:
+                return 0
+            else:
+                return -1 if str1 < str2 else 1
 
 
-def _fit_str_bool(val1, val2):
+def _cmp_num_num(val1, val2):
+    if val1 == val2:
+        return 0
+    elif val1 < val2:
+        return -1
+    else:
+        return 1
+
+
+def _cmp_str_str(val1, val2):
+    val1 = val1.strip()
+    val2 = val2.strip()
+    diff = len(val1) - len(val2)
+    if diff == 0:
+        return _libc_strcmp(val1, val2)
+    elif diff < 0:
+        return -1
+    else:
+        return 1
+
+
+def _cmp_str_num(val1, val2):
     try:
-        return float(val1.strip()), val2
+        fit1 = float(val1.strip())
     except ValueError:
-        return val1.strip(), '1' if val2 else '0'
+        return _cmp_str_str(val1, str(val2))
+    else:
+        return _cmp_num_num(fit1, val2)
 
 
-def _fit_str_datetime(val1, val2):
+def _cmp_str_bool(val1, val2):
+    try:
+        fit1 = float(val1.strip())
+    except ValueError:
+        return _cmp_str_str(val1, '1' if val2 else '0')
+    else:
+        return _cmp_num_num(fit1, val2)
+
+
+def _cmp_str_date(val1, val2):
     try:
         fit1 = dateparser.parse(
             val1.strip(), fuzzy=False, ignoretz=True, default=DEFAULT_DATETIME)
     except (ValueError, OverflowError):
-        return val1.strip(), str(val2)
+        return _cmp_str_str(val1, str(val2))
     else:
-        if isinstance(val2, datetime.date):
-            return fit1, datetime.datetime.combine(val2, datetime.time())
-        else:
-            return fit1, val2
+        fit2 = datetime.datetime.combine(val2, datetime.time())
+        return _cmp_num_num(fit1, fit2)
 
 
-def _fit_date_datetime(val1, val2):
-    return datetime.datetime.combine(val1, datetime.time()), val2
+def _cmp_str_datetime(val1, val2):
+    try:
+        fit1 = dateparser.parse(
+            val1.strip(), fuzzy=False, ignoretz=True, default=DEFAULT_DATETIME)
+    except (ValueError, OverflowError):
+        return _cmp_str_str(val1, str(val2))
+    else:
+        return _cmp_num_num(fit1, val2)
 
 
-def _fit_datetime_date(val1, val2):
-    return val1, datetime.datetime.combine(val2, datetime.time())
+def _cmp_date_datetime(val1, val2):
+    fit1 = datetime.datetime.combine(val1, datetime.time())
+    return _cmp_num_num(fit1, val2)
 
 
-def _fit_nothing2(val1, val2):
-    return val1, val2
+def _cmp_datetime_date(val1, val2):
+    fit2 = datetime.datetime.combine(val2, datetime.time())
+    return _cmp_num_num(val1, fit2)
 
 
-XEQ_ALL_TYPES = {
+XCMP_ALL_TYPES = {
     int: 10,
     float: 11,
     bool: 12,
-    datetime.datetime: 21,
-    datetime.date: 22,
+    datetime.date: 21,
+    datetime.datetime: 22,
     str: 30,
     tuple: 40,
     type(None): 50,
 }
-XEQ_FIT_TYPES = {
+XCMP_FIT_TYPES = {
     # cast types
-    (str, int):                 _fit_str_num,
-    (str, float):               _fit_str_num,
-    (str, bool):                _fit_str_bool,
-    (str, datetime.date):       _fit_str_datetime,
-    (str, datetime.datetime):   _fit_str_datetime,
-    (str, type(None)):          (lambda v1, _: (v1.strip(), '')),
-    (type(None), str):          (lambda _, v2: ('', v2.strip())),
-    (str, str):                 (lambda v1, v2: (v1.strip(), v2.strip())),
+    (str, int):                 _cmp_str_num,
+    (str, float):               _cmp_str_num,
+    (str, bool):                _cmp_str_bool,
+    (str, datetime.date):       _cmp_str_date,
+    (str, datetime.datetime):   _cmp_str_datetime,
+    (str, type(None)):          (lambda v1, _: _cmp_str_str(v1, '')),
+    (type(None), str):          (lambda _, v2: _cmp_str_str('', v2)),
+    (str, str):                 _cmp_str_str,
 
     # compatible types
-    (int, int):                 _fit_nothing2,
-    (int, float):               _fit_nothing2,
-    (int, bool):                _fit_nothing2,
-    (float, float):             _fit_nothing2,
-    (float, int):               _fit_nothing2,
-    (float, bool):              _fit_nothing2,
-    (bool, int):                _fit_nothing2,
-    (bool, float):              _fit_nothing2,
-    (bool, bool):               _fit_nothing2,
-    (type(None), type(None)):   _fit_nothing2,
+    (int, int):                 _cmp_num_num,
+    (int, float):               _cmp_num_num,
+    (int, bool):                _cmp_num_num,
+    (float, float):             _cmp_num_num,
+    (float, int):               _cmp_num_num,
+    (float, bool):              _cmp_num_num,
+    (bool, int):                _cmp_num_num,
+    (bool, float):              _cmp_num_num,
+    (bool, bool):               _cmp_num_num,
+    (type(None), type(None)):   (lambda v1, v2: 0),
 
     # datetime types
-    (datetime.date, datetime.date):         _fit_nothing2,
-    (datetime.date, datetime.datetime):     _fit_date_datetime,
-    (datetime.datetime, datetime.date):     _fit_datetime_date,
-    (datetime.datetime, datetime.datetime): _fit_nothing2,
+    (datetime.date, datetime.date):         _cmp_num_num,
+    (datetime.date, datetime.datetime):     _cmp_date_datetime,
+    (datetime.datetime, datetime.date):     _cmp_datetime_date,
+    (datetime.datetime, datetime.datetime): _cmp_num_num,
 }
 
 
 def xeq_(val1, val2):
-    tp_val1 = type(val1)
-    tp_val2 = type(val2)
-    if tp_val1 not in XEQ_ALL_TYPES \
-            or tp_val2 not in XEQ_ALL_TYPES:
-        Ctx.throw('不支持该类型之间的比较：{0} <-> {1}',
-                  tp_val1.__name__, tp_val2.__name__)
-    elif val1 is val2:
-        return True
-    elif tp_val1 is tuple and tp_val2 is tuple:
-        if len(val1) != len(val2):
-            return False
-        return all(itertools.starmap(xeq_, zip(val1, val2)))
-    elif (tp_val1, tp_val2) in XEQ_FIT_TYPES:
-        fit1, fit2 = XEQ_FIT_TYPES[(tp_val1, tp_val2)](val1, val2)
-        return fit1 == fit2
-    elif (tp_val2, tp_val1) in XEQ_FIT_TYPES:
-        fit2, fit1 = XEQ_FIT_TYPES[(tp_val2, tp_val1)](val2, val1)
-        return fit1 == fit2
-    else:
-        return False
+    return xcmp_(val1, val2) == 0
 
 
 def xlt_(val1, val2):
-    tp_val1 = type(val1)
-    tp_val2 = type(val2)
-    if tp_val1 not in XEQ_ALL_TYPES \
-            or tp_val2 not in XEQ_ALL_TYPES:
-        Ctx.throw('不支持该类型之间的比较：{0} <-> {1}',
-                  tp_val1.__name__, tp_val2.__name__)
-    elif val1 is val2:
-        return False
-    elif tp_val1 is tuple and tp_val2 is tuple:
-        for elm1, elm2 in zip(val1, val2):
-            if not xeq_(elm1, elm2):
-                return xlt_(elm1, elm2)
-        return len(val1) < len(val2)
-    elif (tp_val1, tp_val2) in XEQ_FIT_TYPES:
-        fit1, fit2 = XEQ_FIT_TYPES[(tp_val1, tp_val2)](val1, val2)
-        return fit1 < fit2
-    elif (tp_val2, tp_val1) in XEQ_FIT_TYPES:
-        fit2, fit1 = XEQ_FIT_TYPES[(tp_val2, tp_val1)](val2, val1)
-        return fit1 < fit2
-    else:
-        return XEQ_ALL_TYPES[tp_val1] < XEQ_ALL_TYPES[tp_val2]
+    return xcmp_(val1, val2) < 0
 
 
 def xcmp_(val1, val2):
-    if xeq_(val1, val2):
+    if val1 is val2:
         return 0
-    elif xlt_(val1, val2):
-        return -1
+    tp_val1 = type(val1)
+    tp_val2 = type(val2)
+    if tp_val1 is tuple and tp_val2 is tuple:
+        diff = len(val1) - len(val2)
+        if diff == 0:
+            for res in itertools.starmap(xcmp_, zip(val1, val2)):
+                if res != 0:
+                    return res
+            return 0
+        elif diff < 0:
+            return -1
+        else:
+            return 1
     else:
-        return 1
+        _cmp_impl = XCMP_FIT_TYPES.get((tp_val1, tp_val2))
+        if _cmp_impl is not None:
+            return _cmp_impl(val1, val2)
+        _cmp_impl = XCMP_FIT_TYPES.get((tp_val2, tp_val1))
+        if _cmp_impl is not None:
+            return _cmp_impl(val2, val1)
+        if tp_val1 not in XCMP_ALL_TYPES or tp_val2 not in XCMP_ALL_TYPES:
+            Ctx.throw('不支持该类型之间的比较：{0} <-> {1}', tp_val1.__name__, tp_val2.__name__)
+        return _cmp_num_num(XCMP_ALL_TYPES[tp_val1], XCMP_ALL_TYPES[tp_val2])
 
 
 class XlRowView(object):
