@@ -49,7 +49,7 @@ def ignore_return(func):
     return wrap
 
 
-def do_json(value, indent=None):
+def do_json(value, indent=None, closed=True):
     options = {}
     options['sort_keys'] = True
     options['ensure_ascii'] = False
@@ -57,11 +57,22 @@ def do_json(value, indent=None):
         options['indent'] = indent
     else:
         options['separators'] = (',', ':')
-    return json.dumps(value, **options)
+    output = json.dumps(value, **options)
+    if output and not closed and (output[0]+output[-1]) in {'{}','[]'}:
+        output = output[1:-1]
+    return output
 
 
-def do_lua(value, indent=None):
-    return x2pylua.dumps(value, indent=indent)
+def do_lua(value, indent=None, closed=True):
+    options = {}
+    if indent is not None:
+        options['indent'] = indent
+    else:
+        options['separators'] = (',', '=')
+    output = x2pylua.dumps(value, **options)
+    if output and not closed and (output[0]+output[-1]) in {'{}'}:
+        output = output[1:-1]
+    return output
 
 
 @filters.contextfilter
