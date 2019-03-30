@@ -22,8 +22,12 @@ RANGE_NIL = '...'
 COLKEY_TOKEN = '@'
 COLKEY_REGEX = \
     re.compile(r'^(@[^,$:]+)$', re.IGNORECASE)
-CELLXX_REGEX = \
+CELLX1_REGEX = \
     re.compile(r'^([A-Z]+)([1-9][0-9]*)$', re.IGNORECASE)
+CELLX2_REGEX = \
+    re.compile(
+        r'^(?:(@[^,$:]+)([,$][1-9][0-9]*)|([A-Z]+)([1-9][0-9]*))$',
+        re.IGNORECASE)
 COLUMN_REGEX = \
     re.compile(r'^([A-Z]+)$', re.IGNORECASE)
 VINDEX_REGEX = \
@@ -67,6 +71,14 @@ RangeArgs = collections.namedtuple(
 )
 
 
+def cell_args(lcol, lrow):
+    return RangeArgs(lcol - 1, lrow - 1, 1, 1)
+
+
+def cell_expr(lcol, lrow):
+    return build_column(lcol) + str(lrow)
+
+
 def range_args(lcol, lrow, hcol, hrow):
     return RangeArgs(lcol - 1, lrow - 1, hcol - lcol + 1, hrow - lrow + 1)
 
@@ -78,7 +90,28 @@ def range_expr(lcol, lrow, hcol, hrow):
     ])
 
 
-def parse_ranges(expr, max_col, max_row, headers=None, min_col=1, min_row=1):
+def parse_cell(expr, headers=None):
+    if not isinstance(expr, str):
+        Ctx.throw('错误的单元格式：{0!r}', expr)
+    matches = CELLX2_REGEX.match(expr.strip())
+    if not matches:
+        Ctx.throw('错误的单元格式：{0!r}', expr)
+    if matches.group(1):
+        lkey = matches.group(1)
+        lcol = headers.get(lkey[1:], [0])[0] if headers else 0
+        if lcol == 0:
+            Ctx.throw('无法定位指定列：{0!r}', lkey)
+        lrow = int(matches.group(2)[1:])
+    else:
+        lcol = parse_column(matches.group(3))
+        lrow = int(matches.group(4))
+    return (
+        cell_expr(lcol, lrow),
+        cell_args(lcol, lrow),
+    )
+
+
+def parse_range(expr, max_col, max_row, headers=None, min_col=1, min_row=1):
     def make_return(lcol, lrow, hcol, hrow):
         return (
             range_expr(lcol, lrow, hcol, hrow),
@@ -434,13 +467,13 @@ class SheetView(object):
                 str(expr.start or ''),
                 str(expr.stop or ''),
             ])
-        if expr.strip() == RANGE_NIL:
+        if expr == RANGE_NIL:
             return
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(
+        slc_expr, args = parse_range(
             expr, max_col, max_row, self._headers, min_col=self._beg_col)
         for idx, row in xslice(self._worksheet[slc_expr], self._beg_row, self._end_row):
             Ctx.set_ctx(str(self), args.voff + idx)
@@ -496,10 +529,31 @@ class SheetView(object):
         return tuple(impl(idxs, self._headers))
 
     def valx(self, expr):
-        if not isinstance(expr, str) \
-                or not CELLXX_REGEX.match(expr.strip()):
-            Ctx.throw('错误的单元格式：{0!r}', expr)
-        return self._worksheet[expr.strip().upper()].value
+        cx1_expr, _ = parse_cell(expr, self._headers)
+        return self._worksheet[cx1_expr].value
+
+    def pickcol(self, expr, to_int=False):
+        cx1_expr, _ = parse_cell(expr, self._headers)
+        col_expr = CELLX1_REGEX.match(cx1_expr).group(1)
+        return parse_column(col_expr) if to_int else col_expr
+
+    def pickrow(self, expr):
+        cx1_expr, _ = parse_cell(expr, self._headers)
+        return int(CELLX1_REGEX.match(cx1_expr).group(2))
+
+    def offset(self, expr, hoff=1, voff=0):
+        if not isinstance(hoff, int):
+            Ctx.throw('水平位移量必须是整数：{0!r}', hoff)
+        if not isinstance(voff, int):
+            Ctx.throw('垂直位移量必须是整数：{0!r}', voff)
+        cx1_expr, args = parse_cell(expr, self._headers)
+        if hoff == 0 and voff == 0:
+            return cx1_expr
+        hidx = args.hoff + hoff + 1
+        vidx = args.voff + voff + 1
+        if hidx <= 0 or vidx <= 0:
+            Ctx.throw('单元偏移超出范围：{0!r},{1},{2}', expr, hoff, voff)
+        return cell_expr(hidx, vidx)
 
     def rehead(self, vidx, hbeg=None, vbeg=None, hend=None, vend=None):
         max_row = self._worksheet.max_row
@@ -514,7 +568,7 @@ class SheetView(object):
                     not VINDEX_REGEX.match(vidx.strip()):
                 Ctx.throw('无法定位指定行：{0!r}', vidx)
             vidx = int(vidx.strip())
-        slc_expr, _ = parse_ranges(
+        slc_expr, _ = parse_range(
             str(vidx), max_col, max_row, min_col=self._beg_col)
         for head_row in self._worksheet[slc_expr]:
             headers = {}
@@ -545,7 +599,7 @@ class SheetView(object):
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(
+        slc_expr, args = parse_range(
             expr, max_col, max_row, self._headers, min_col=self._beg_col)
         if slc_expr is not None:
             for idx, row in xslice(self._worksheet[slc_expr], self._beg_row, self._end_row):
@@ -616,7 +670,7 @@ class SheetView(object):
         max_col = self._worksheet.max_column
         if max_row <= 0 or max_col <= 0:
             return
-        slc_expr, args = parse_ranges(
+        slc_expr, args = parse_range(
             tab, max_col, max_row, self._headers, min_col=self._beg_col)
         keys = tuple(range(1, args.hnum + 1))
         iterable = (
@@ -650,38 +704,6 @@ def xrequire(rows, *keys):
     for row in rows:
         if all(not xeq_(row.valx(key), '') for key in keys):
             yield row
-
-
-def xpickcol(value, to_int=False):
-    if not isinstance(value, str) \
-            or not CELLXX_REGEX.match(value.strip()):
-        Ctx.throw('错误的单元格式：{0!r}', value)
-    expr = CELLXX_REGEX.match(value.strip()).group(1)
-    return parse_column(expr) if to_int else expr
-
-
-def xpickrow(value):
-    if not isinstance(value, str) \
-            or not CELLXX_REGEX.match(value.strip()):
-        Ctx.throw('错误的单元格式：{0!r}', value)
-    return int(CELLXX_REGEX.match(value.strip()).group(2))
-
-
-def xoffset(value, hoff=1, voff=0):
-    if not isinstance(value, str) \
-            or not CELLXX_REGEX.match(value.strip()):
-        Ctx.throw('错误的单元格式：{0!r}', value)
-    if not isinstance(hoff, int):
-        Ctx.throw('水平位移量必须是整数：{0!r}', hoff)
-    if not isinstance(voff, int):
-        Ctx.throw('垂直位移量必须是整数：{0!r}', voff)
-    if hoff == 0 and voff == 0:
-        return value
-    hpar, vpar = CELLXX_REGEX.match(value.strip()).groups()
-    hidx, vidx = parse_column(hpar), int(vpar)
-    if hidx + hoff <= 0 or vidx + voff <= 0:
-        Ctx.throw('单元偏移超出范围：{0!r},{1},{2}', value, hoff, voff)
-    return build_column(hidx + hoff) + str(vidx + voff)
 
 
 def xgroupby(rows, *keys, asc=True, required=True):
