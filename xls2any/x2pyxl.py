@@ -532,16 +532,15 @@ class SheetView(object):
         cx1_expr, _ = parse_cell(expr, self._headers)
         return self._worksheet[cx1_expr].value
 
-    def pickcol(self, expr, to_int=False):
-        cx1_expr, _ = parse_cell(expr, self._headers)
-        col_expr = CELLX1_REGEX.match(cx1_expr).group(1)
-        return parse_column(col_expr) if to_int else col_expr
+    def exprcol(self, expr, to_int=False):
+        _, args = parse_cell(expr, self._headers)
+        return args.hoff + 1 if to_int else build_column(args.hoff + 1)
 
-    def pickrow(self, expr):
-        cx1_expr, _ = parse_cell(expr, self._headers)
-        return int(CELLX1_REGEX.match(cx1_expr).group(2))
+    def exprrow(self, expr):
+        _, args = parse_cell(expr, self._headers)
+        return args.voff + 1
 
-    def offset(self, expr, hoff=1, voff=0):
+    def exproff(self, expr, hoff=1, voff=0):
         if not isinstance(hoff, int):
             Ctx.throw('水平位移量必须是整数：{0!r}', hoff)
         if not isinstance(voff, int):
