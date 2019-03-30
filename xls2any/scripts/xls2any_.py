@@ -49,6 +49,19 @@ def ignore_return(func):
     return wrap
 
 
+def do_bool(value):
+    return True if value else False
+
+
+def do_num(value, default=0):
+    if isinstance(value, (int, float)):
+        return value
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def do_json(value, indent=None, closed=True):
     options = {}
     options['sort_keys'] = True
@@ -97,6 +110,14 @@ def do_check(ctx, value, expr, msg=None):
     return value
 
 
+def do_clamp(value, lower, upper):
+    if value < lower:
+        return lower
+    if value > upper:
+        return upper
+    return value
+
+
 @filters.environmentfilter
 def do_next(env, value, num=1):
     cur = None
@@ -110,30 +131,32 @@ def do_next(env, value, num=1):
 
 
 def do_splitf(value, nth=1, fs=None):
-    idx = 0
-    cur = 0
-    value = str(value)
-    matches = re.finditer('(%s)+' % (fs or ' '), value)
-    while idx < nth:
+    index = 0
+    count = 0
+    string = str(value)
+    result = re.finditer('((?:%s)+)' % re.escape(fs or ' '), string)
+    while count < nth:
         try:
-            match = next(matches)
+            match = next(result)
         except StopIteration:
-            if cur < len(value):
-                idx += 1
-                if idx == nth:
-                    return value[cur:]
+            if index < len(string):
+                count += 1
+                if count == nth:
+                    return string[index:]
             break
         else:
             if match.start() > 0:
-                idx += 1
-                if idx == nth:
-                    return value[cur:match.start()]
-            cur = match.end()
+                count += 1
+                if count == nth:
+                    return string[index:match.start()]
+            index = match.end()
     return ''
 
 
 FILTERS = {
     'abs':          defaults.DEFAULT_FILTERS['abs'],
+    'b':            do_bool,
+    'bool':         do_bool,
     'check':        do_check,
     'choice':       defaults.DEFAULT_FILTERS['random'],
     'd':            defaults.DEFAULT_FILTERS['default'],
@@ -143,8 +166,8 @@ FILTERS = {
     'f':            defaults.DEFAULT_FILTERS['float'],
     'float':        defaults.DEFAULT_FILTERS['float'],
     'format':       defaults.DEFAULT_FILTERS['format'],
-    'i':            defaults.DEFAULT_FILTERS['int'],
     'indent':       defaults.DEFAULT_FILTERS['indent'],
+    'i':            defaults.DEFAULT_FILTERS['int'],
     'int':          defaults.DEFAULT_FILTERS['int'],
     'join':         defaults.DEFAULT_FILTERS['join'],
     'json':         do_json,
@@ -154,12 +177,15 @@ FILTERS = {
     'lua':          do_lua,
     'max':          defaults.DEFAULT_FILTERS['max'],
     'min':          defaults.DEFAULT_FILTERS['min'],
+    'n':            do_num,
+    'num':          do_num,
+    'clamp':        do_clamp,
     'next':         do_next,
     'reverse':      defaults.DEFAULT_FILTERS['reverse'],
     'round':        defaults.DEFAULT_FILTERS['round'],
-    's':            defaults.DEFAULT_FILTERS['string'],
     'sort':         defaults.DEFAULT_FILTERS['sort'],
     'splitf':       do_splitf,
+    's':            defaults.DEFAULT_FILTERS['string'],
     'str':          defaults.DEFAULT_FILTERS['string'],
     'sum':          defaults.DEFAULT_FILTERS['sum'],
     'trim':         defaults.DEFAULT_FILTERS['trim'],
@@ -170,9 +196,11 @@ FILTERS = {
 }
 TESTS = dict(defaults.DEFAULT_TESTS)
 TESTS.update({
-    'xcmp':         x2pyxl.xcmp_,
     'xeq':          x2pyxl.xeq_,
     'xlt':          x2pyxl.xlt_,
+    'xle':          x2pyxl.xle_,
+    'xgt':          x2pyxl.xgt_,
+    'xge':          x2pyxl.xge_,
 })
 GLOBALS = {
     'abort':        Ctx.abort,
