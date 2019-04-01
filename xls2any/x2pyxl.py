@@ -493,21 +493,8 @@ class SheetView(object):
             yield self._cur_row
 
     @property
-    def vobj(self, vidx=None):
-        if vidx is None:
-            return self._cur_row
-        if self._worksheet.max_row <= 0 \
-                or self._worksheet.max_column <= 0:
-            return None
-        if isinstance(vidx, int):
-            if vidx <= 0:
-                Ctx.throw('无法定位指定行：{0!r}', vidx)
-        else:
-            if not isinstance(vidx, str) or \
-                    not VINDEX_REGEX.match(vidx.strip()):
-                Ctx.throw('无法定位指定行：{0!r}', vidx)
-            vidx = int(vidx.strip())
-        return XlRowView(self, self._worksheet[str(vidx)], 0, vidx)
+    def vidx(self):
+        return self._cur_row.vidx if self._cur_row else 0
 
     def hidx(self, key, multi=False, hoff=0, hmax=sys.maxsize):
         if isinstance(key, str):
@@ -539,6 +526,22 @@ class SheetView(object):
                 else:
                     yield headers[hidx]
         return tuple(impl(idxs, self._headers))
+
+    def rowx(self, vidx=None):
+        if vidx is None:
+            return self._cur_row
+        if self._worksheet.max_row <= 0 \
+                or self._worksheet.max_column <= 0:
+            return None
+        if isinstance(vidx, int):
+            if vidx <= 0:
+                Ctx.throw('无法定位指定行：{0!r}', vidx)
+        else:
+            if not isinstance(vidx, str) or \
+                    not VINDEX_REGEX.match(vidx.strip()):
+                Ctx.throw('无法定位指定行：{0!r}', vidx)
+            vidx = int(vidx.strip())
+        return XlRowView(self, self._worksheet[str(vidx)], 0, vidx)
 
     def valx(self, expr):
         cx1_expr, _ = parse_cell(expr, self._headers)
