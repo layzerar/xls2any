@@ -712,12 +712,18 @@ def xslice(rows, vbeg=1, vend=sys.maxsize):
         yield idx, row
 
 
-def xrequire(rows, *keys):
+def xrequire(rows, *keys, over=0):
     if not hasattr(rows, '__iter__'):
         Ctx.throw('xrequire 的传入参数必须是集合')
+    blanks = 0
     for row in rows:
         if all(not xeq_(row.valx(key), '') for key in keys):
+            blanks = 0
             yield row
+        else:
+            blanks += 1
+            if 0 < over <= blanks:
+                break
 
 
 def xgroupby(rows, *keys, asc=True, required=True):
