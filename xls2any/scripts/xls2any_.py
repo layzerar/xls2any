@@ -72,7 +72,7 @@ def do_json(value, indent=None, closed=True):
         options['separators'] = (',', ':')
     output = json.dumps(value, **options)
     if output and not closed and (output[0]+output[-1]) in {'{}','[]'}:
-        output = output[1:-1]
+        output = output[1:-1].strip()
     return output
 
 
@@ -84,7 +84,7 @@ def do_lua(value, indent=None, closed=True):
         options['separators'] = (',', '=')
     output = x2pylua.dumps(value, **options)
     if output and not closed and (output[0]+output[-1]) in {'{}'}:
-        output = output[1:-1]
+        output = output[1:-1].strip()
     return output
 
 
