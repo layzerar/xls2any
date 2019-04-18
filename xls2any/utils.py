@@ -78,9 +78,12 @@ class Ctx(object):
         cls._at_abort = func
 
 
-def detect_encoding(binary_data, default='utf-8'):
+def detect_encoding(binary_data, default='utf-8', confidence=0.75):
     result = chardet.detect(binary_data)
-    return result['encoding'] or default
+    if result['encoding'] and result['confidence'] >= confidence:
+        return result['encoding']
+    else:
+        return default
 
 
 def open_as_stdout(filename, encoding='utf-8'):
