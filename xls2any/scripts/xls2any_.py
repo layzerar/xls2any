@@ -153,6 +153,14 @@ def do_splitf(value, nth=1, fs=None):
     return ''
 
 
+def do_spaces(num=1):
+    return ' ' * num
+
+
+def do_tabs(num=1):
+    return '\t' * num
+
+
 FILTERS = {
     'abs':          defaults.DEFAULT_FILTERS['abs'],
     'b':            do_bool,
@@ -213,6 +221,8 @@ GLOBALS = {
     'namespace':    defaults.DEFAULT_NAMESPACE['namespace'],
     'output':       ignore_return(utils.open_as_stdout),
     'range':        defaults.DEFAULT_NAMESPACE['range'],
+    'spaces':       do_spaces,
+    'tabs':         do_tabs,
     'throw':        Ctx.throw,
 }
 
