@@ -232,7 +232,7 @@ def get_j2exc_lineno():
     stacks = traceback.extract_tb(exc_tb)
     exc_tb = None
     for frame in reversed(stacks):
-        if frame[0] == '<template>':
+        if frame[0] in {'<template>', '<unknown>'}:
             return frame[1]
     return 1
 
