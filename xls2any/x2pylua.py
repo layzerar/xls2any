@@ -67,7 +67,13 @@ class LuaEncoder(object):
     LUA_ESCAPE_TABLE = get_lua_escape_table()
 
     def __init__(self, check_circular=True, indent=None, separators=(', ', ' = ')):
-        self._indent = ' ' * (indent or 0)
+        if isinstance(indent, str):
+            _indent = indent if indent.isspace() else ''
+        elif isinstance(indent, int):
+            _indent = ' ' * indent
+        else:
+            _indent = ''
+        self._indent = _indent
         self._separators = separators
         self._check_circular = check_circular
 
