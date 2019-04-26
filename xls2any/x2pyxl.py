@@ -411,7 +411,10 @@ class XlRowView(object):
         return self._sheet.keys(*idxs, token=token)
 
     def vals(self, *keys):
-        return tuple(self.valx(key) for key in keys)
+        if not keys:
+            return tuple(elm.value for elm in self._array)
+        else:
+            return tuple(self.valx(key) for key in keys)
 
     def valx(self, key):
         col = self.hidx(key) - self._offset
@@ -635,7 +638,7 @@ class SheetView(object):
     def locate(self, ltag, htag, loff=1, hoff=-1):
         hbeg, vbeg, hend, vend = None, None, None, None
         for row in self.select(RANGE_SEP):
-            for idx, val in enumerate(row, 1):
+            for idx, val in enumerate(row.vals(), 1):
                 if val is None:
                     continue
                 if vbeg is None and xeq_(ltag, val):
