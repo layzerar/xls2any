@@ -8,9 +8,9 @@ import datetime
 import functools
 import itertools
 import collections
+from decimal import Decimal
 
 import openpyxl
-import dateutil.parser as dateparser
 
 from . import utils
 
@@ -220,30 +220,13 @@ def _cmp_str_bool(val1, val2):
     try:
         fit1 = float(val1.strip())
     except ValueError:
-        return _cmp_str_str(val1, '1' if val2 else '0')
+        return _cmp_str_str(val1, 'TRUE' if val2 else 'FALSE')
     else:
         return _cmp_num_num(fit1, val2)
 
 
 def _cmp_str_date(val1, val2):
-    try:
-        fit1 = dateparser.parse(
-            val1.strip(), fuzzy=False, ignoretz=True, default=DEFAULT_DATETIME)
-    except (ValueError, OverflowError):
-        return _cmp_str_str(val1, str(val2))
-    else:
-        fit2 = datetime.datetime.combine(val2, datetime.time())
-        return _cmp_num_num(fit1, fit2)
-
-
-def _cmp_str_datetime(val1, val2):
-    try:
-        fit1 = dateparser.parse(
-            val1.strip(), fuzzy=False, ignoretz=True, default=DEFAULT_DATETIME)
-    except (ValueError, OverflowError):
-        return _cmp_str_str(val1, str(val2))
-    else:
-        return _cmp_num_num(fit1, val2)
+    return _cmp_str_str(val1, str(val2))
 
 
 def _cmp_date_datetime(val1, val2):
@@ -259,39 +242,47 @@ def _cmp_datetime_date(val1, val2):
 XCMP_ALL_TYPES = {
     int: 10,
     float: 11,
-    bool: 12,
+    Decimal: 12,
+    bool: 13,
     datetime.date: 21,
     datetime.datetime: 22,
+    datetime.time: 23,
     str: 30,
     tuple: 40,
     type(None): 50,
 }
 XCMP_FIT_TYPES = {
-    # cast types
-    (str, int):                 _cmp_str_num,
-    (str, float):               _cmp_str_num,
-    (str, bool):                _cmp_str_bool,
-    (str, datetime.date):       _cmp_str_date,
-    (str, datetime.datetime):   _cmp_str_datetime,
-    (str, type(None)):          (lambda v1, _: _cmp_str_str(v1, '')),
-    (type(None), str):          (lambda _, v2: _cmp_str_str('', v2)),
-    (str, str):                 _cmp_str_str,
-
-    # compatible types
-    (int, int):                 _cmp_num_num,
-    (int, float):               _cmp_num_num,
-    (int, bool):                _cmp_num_num,
-    (float, float):             _cmp_num_num,
-    (float, int):               _cmp_num_num,
-    (float, bool):              _cmp_num_num,
-    (bool, int):                _cmp_num_num,
-    (bool, float):              _cmp_num_num,
+    # special types
     (bool, bool):               _cmp_num_num,
     (type(None), type(None)):   (lambda v1, v2: 0),
+
+    # numeric types
+    (int, int):                 _cmp_num_num,
+    (int, float):               _cmp_num_num,
+    (int, Decimal):             _cmp_num_num,
+    (float, int):               _cmp_num_num,
+    (float, float):             _cmp_num_num,
+    (float, Decimal):           _cmp_num_num,
+    (Decimal, int):             _cmp_num_num,
+    (Decimal, float):           _cmp_num_num,
+    (Decimal, Decimal):         _cmp_num_num,
+
+    # downcast types
+    (str, int):                 _cmp_str_num,
+    (str, float):               _cmp_str_num,
+    (str, Decimal):             _cmp_str_num,
+    (str, bool):                _cmp_str_bool,
+    (str, datetime.date):       _cmp_str_date,
+    (str, datetime.time):       _cmp_str_date,
+    (str, datetime.datetime):   _cmp_str_date,
+    (str, str):                 _cmp_str_str,
+    (str, type(None)):          lambda v1, _: _cmp_str_str(v1, ''),
+    (type(None), str):          lambda _, v2: _cmp_str_str('', v2),
 
     # datetime types
     (datetime.date, datetime.date):         _cmp_num_num,
     (datetime.date, datetime.datetime):     _cmp_date_datetime,
+    (datetime.time, datetime.time):         _cmp_num_num,
     (datetime.datetime, datetime.date):     _cmp_datetime_date,
     (datetime.datetime, datetime.datetime): _cmp_num_num,
 }
