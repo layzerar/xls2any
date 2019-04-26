@@ -2,6 +2,7 @@
 
 import sys
 import datetime
+import functools
 
 import chardet
 import colorama
@@ -93,3 +94,20 @@ def open_as_stdout(filename, encoding='utf-8'):
         Ctx.throw('无法打开目标输出流：{0}', filename)
     except LookupError:
         Ctx.throw('错误的文件编码名称：{0}', encoding)
+
+
+def cachedmethod(namespace, keyfmt, dumps=None, loads=None):
+    def decorator(func):
+        @functools.wraps(func)
+        def decorate(*args, **kwds):
+            cache_key  = keyfmt.format(*args, **kwds)
+            cache_dict = getattr(args[0], namespace)
+            if cache_key not in cache_dict:
+                result = func(*args, **kwds)
+                cache_val = result if dumps is None else dumps(result)
+                cache_dict[cache_key] = cache_val
+            else:
+                cache_val = cache_dict[cache_key]
+            return cache_val if loads is None else loads(cache_val)
+        return decorate
+    return decorator

@@ -186,6 +186,26 @@ except OSError:
                 return -1 if str1 < str2 else 1
 
 
+TOSTRING_TYPES = {
+    int:                 str,
+    float:               str,
+    Decimal:             str,
+    bool:                lambda v1: 'TRUE' if v1 else 'FALSE',
+    datetime.date:       str,
+    datetime.datetime:   str,
+    datetime.time:       str,
+    str:                 lambda v1: v1.strip(),
+    type(None):          lambda v1: '',
+}
+
+
+def xstr(val1):
+    conv = TOSTRING_TYPES.get(type(val1))
+    if conv is None:
+        Ctx.throw('不能将该类型转化为文本：{0}', tp_val1.__name__)
+    return conv(val1)
+
+
 def _cmp_num_num(val1, val2):
     if val1 == val2:
         return 0
@@ -455,6 +475,7 @@ class SheetView(object):
         self._end_col = end_col or self._worksheet.max_column
         self._end_row = end_row or self._worksheet.max_row
         self._cur_row = None
+        self._caches = {}
 
     def __str__(self):
         return '{0}#{1}'.format(self._filename, self._sheetname)
@@ -599,6 +620,7 @@ class SheetView(object):
             )
         return self
 
+    @utils.cachedmethod('_caches', 'select:{1}', tuple, iter)
     def select(self, expr):
         max_row = self._worksheet.max_row
         max_col = self._worksheet.max_column
@@ -637,38 +659,41 @@ class SheetView(object):
             hend=hend + 0,
             vend=vend + hoff)
 
-    def findone(self, val1, tab):
+    @utils.cachedmethod('_caches', '__index:{1}:{2}')
+    def __index(self, tab, keys):
+        index = {}
+        for row in self.select(tab):
+            ukey = tuple(xstr(x) for x in row.vals(*keys))
+            vals = index.get(ukey)
+            if vals is None:
+                vals = index[ukey] = []
+            vals.append(row)
+        return {ukey: tuple(vals) for ukey, vals in index.items()}
+
+    def findall(self, val1, tab, *keys):
+        if isinstance(val1, (tuple, list)):
+            if len(val1) <= 0:
+                Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
+            if not keys:
+                keys = tuple(range(1, len(val1) + 1))
+            elif len(keys) != len(val1):
+                Ctx.throw('目标元素个数和索引列数不一致：{0!r}', keys)
+            ukey = tuple(xstr(x) for x in val1)
+        else:
+            if not keys:
+                keys = (1,)
+            elif len(keys) != len(val1):
+                Ctx.throw('目标元素个数和索引列数不一致：{0!r}', keys)
+            ukey = (xstr(val1),)
+        return self.__index(tab, keys).get(ukey, ())
+
+    def findone(self, val1, tab, *keys):
         for row in self.findall(val1, tab):
             return row
         Ctx.throw('指定区域\'{0}\'!{1}找不到对应值{2!r}', str(self), tab, val1)
 
-    def findall(self, val1, tab):
-        if isinstance(val1, (tuple, list)):
-            if len(val1) <= 0:
-                Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
-            val1 = tuple(val1)
-            keys = tuple(range(1, len(val1) + 1))
-            valx = (lambda row: row.vals(*keys))
-        else:
-            valx = (lambda row: row.valx(1))
-        for row in self.select(tab):
-            if xeq_(val1, valx(row)):
-                yield row
-
     def vlookup(self, val1, tab, idx):
-        if isinstance(val1, (tuple, list)):
-            if len(val1) <= 0:
-                Ctx.throw('目标元素个数必须大于零：{0!r}', val1)
-            val1 = tuple(val1)
-            keys = tuple(range(1, len(val1) + 1))
-            valx = (lambda row: row.vals(*keys))
-        else:
-            valx = (lambda row: row.valx(1))
-        for row in self.select(tab):
-            if xeq_(val1, valx(row)):
-                return row.valx(idx)
-        Ctx.error('指定区域\'{0}\'!{1}找不到对应值{2!r}', str(self), tab, val1)
-        return None
+        return self.findone(val1, tab).valx(idx)
 
     def chkuniq(self, tab):
         max_row = self._worksheet.max_row
@@ -721,18 +746,10 @@ def xgroupby(rows, *keys, asc=True, required=True):
     if not hasattr(rows, '__iter__'):
         Ctx.throw('xgroupby 的传入参数必须是集合')
 
-    def getkey(row):
-        return tuple(row.valx(key) for key in keys)
-
     def rowcmp(row1, row2):
-        key1 = getkey(row1)
-        key2 = getkey(row2)
-        if xeq_(key1, key2):
-            return 0
-        elif xlt_(key1, key2):
-            return -1
-        else:
-            return 1
+        key1 = tuple(row1.valx(key) for key in keys)
+        key2 = tuple(row2.valx(key) for key in keys)
+        return xcmp_(key1, key2)
 
     origin_rows = rows if not required else xrequire(rows, *keys)
     sorted_rows = sorted(origin_rows, key=functools.cmp_to_key(rowcmp), reverse=not asc)
