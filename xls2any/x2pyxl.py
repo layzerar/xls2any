@@ -139,10 +139,6 @@ def parse_range(expr, max_col, max_row, headers=None, min_col=1, min_row=1):
             hcol = parse_column(matches.group(7)) \
                 if matches.group(7) else max_col
             hrow = int(matches.group(8)) if matches.group(8) else max_row
-        if lcol > hcol:
-            lcol, hcol = hcol, lcol
-        if lrow > hrow:
-            lrow, hrow = hrow, lrow
         return make_return(lcol, lrow, hcol, hrow)
 
     def make_range2(matches):
