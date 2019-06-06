@@ -1,3 +1,15 @@
+## 如何打包
+
+xls2any 基于 Python 开发，打包的主机需要安装 Python 的开发环境，目标主机无需安装 Python。
+
+安装 Python 开发环境:
+
+* 下载并安装 Python 3.6.5 以上版本
+* 确保 Python 安装目录下的 Scripts 路径包含在系统的 PATH 变量里面。例如：C:\Python36\Scripts
+* 在控制台中，使用命令 `pip install -r requirements.txt` 安装依赖包
+* 运行批处理脚本 `.\scripts\pyinstaller_build.bat` 完成打包
+* 把上一步打包生成的目录 xls2any-x.x.x 压缩成 Zip 包
+
 ## 安装说明
 
 xls2any 采用压缩包方式发行软件。
@@ -5,7 +17,7 @@ xls2any 采用压缩包方式发行软件。
 xls2any 安装步骤：
 
 * 解压 xls2any 压缩包，并存放到一个固定位置（最好不要放在桌面）
-* 进入压缩包解压后的目录，以管理员身份运行 assoc_j2ext.bat 文件完成安装
+* 进入压缩包解压后的目录，以管理员身份运行批处理脚本 `assoc_j2ext.bat` 完成安装
 * 进入 examples 目录，双击运行 datasource1_tolua.j2 文件。如果安装正确，当前目录下将会生成一个 datasource1.lua 文件
 
 xls2any 工作原理：

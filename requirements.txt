@@ -1,0 +1,6 @@
+chardet==3.0.4
+click==6.7
+colorama==0.3.9
+Jinja2==2.10
+openpyxl==2.5.3
+PyInstaller==3.3.1
